@@ -37,6 +37,6 @@ export class HdpMaxHopsExceededError extends HdpError {
 
 export class HdpSchemaError extends HdpError {
   constructor(details: string) {
-    super(`Token schema validation failed: ${details}`, 'SCHEMA_INVALID')
+    super(`SCHEMA_INVALID: Token schema validation failed: ${details}`, 'SCHEMA_INVALID')
   }
 }
