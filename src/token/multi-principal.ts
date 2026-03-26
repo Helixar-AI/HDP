@@ -60,7 +60,7 @@ export async function verifyPrincipalChain(
     // Verify parent_token_id linkage (from index 1 onwards)
     if (i > 0) {
       const expectedParent = chain[i - 1].token.header.token_id
-      const actualParent = (token.header as Record<string, unknown>).parent_token_id
+      const actualParent = (token.header as unknown as Record<string, unknown>).parent_token_id
       if (actualParent !== expectedParent) {
         const err = {
           name: 'HdpError',
