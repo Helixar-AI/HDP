@@ -1,7 +1,6 @@
 // tests/integration/reauth.test.ts
 import { describe, it, expect } from 'vitest'
 import { issueToken } from '../../src/token/issuer.js'
-import { extendChain } from '../../src/chain/extender.js'
 import { verifyToken } from '../../src/token/verifier.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
 
@@ -33,7 +32,9 @@ describe('Re-authorization Flow (Section 6.4)', () => {
 
     expect(linkedToken.header.parent_token_id).toBe(original.header.token_id)
 
-    // Fresh re-auth token should verify successfully
+    // Verify the re-auth token is cryptographically valid.
+    // Note: linkedToken demonstrates parent_token_id linkage but cannot be verified
+    // because parent_token_id was set after signing — the signature covers the original header.
     const result = await verifyToken(reAuthToken, { publicKey, currentSessionId: 'sess-reauth-01' })
     expect(result.valid).toBe(true)
   })
