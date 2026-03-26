@@ -165,6 +165,11 @@
           not interoperable. HDP is offered as a distinct design point, not a
           revision of IPP.
         </t>
+        <t>
+          The full HDP protocol specification is available at
+          <xref target="HDP-SPEC"/>. A TypeScript reference implementation
+          is available at <xref target="HDP-IMPL"/>.
+        </t>
       </section>
     </section>
 
@@ -175,7 +180,7 @@
         The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
         "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY",
         and "OPTIONAL" in this document are to be interpreted as described
-        in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when,
+        in <xref target="RFC2119"/> and <xref target="RFC8174"/> when,
         and only when, they appear in all capitals, as shown here.
       </t>
       <dl spacing="normal" newline="false">
@@ -1131,9 +1136,6 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
   <back>
 
     <references>
-      <name>References</name>
-
-      <references>
         <name>Normative References</name>
 
         <reference anchor="RFC2119">
@@ -1195,19 +1197,19 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
           <seriesInfo name="DOI" value="10.17487/RFC4648"/>
         </reference>
 
-      </references>
+    </references>
 
-      <references>
+    <references>
         <name>Informative References</name>
 
-        <reference anchor="I-D.haberkamp-ipp">
+        <reference anchor="I-D.haberkamp-ipp"
+                   target="https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00">
           <front>
             <title>Intent Provenance Protocol (IPP)</title>
             <author initials="M." surname="Haberkamp" fullname="M. Haberkamp"/>
             <date year="2024"/>
           </front>
           <seriesInfo name="Internet-Draft" value="draft-haberkamp-ipp-00"/>
-          <format type="TXT" target="https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00"/>
         </reference>
 
         <reference anchor="RFC8693">
@@ -1236,7 +1238,8 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
           <seriesInfo name="DOI" value="10.17487/RFC7519"/>
         </reference>
 
-        <reference anchor="W3C.DID">
+        <reference anchor="W3C.DID"
+                   target="https://www.w3.org/TR/did-core/">
           <front>
             <title>Decentralized Identifiers (DIDs) v1.0</title>
             <author initials="M." surname="Sporny" fullname="Manu Sporny"/>
@@ -1248,10 +1251,10 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
             <date year="2022" month="July"/>
           </front>
           <seriesInfo name="W3C Recommendation" value="did-core"/>
-          <format type="HTML" target="https://www.w3.org/TR/did-core/"/>
         </reference>
 
-        <reference anchor="HDP-SPEC">
+        <reference anchor="HDP-SPEC"
+                   target="https://helixar.ai/labs/hdp">
           <front>
             <title>Human Delegation Provenance Protocol v0.1 Specification</title>
             <author>
@@ -1259,10 +1262,10 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
             </author>
             <date year="2026"/>
           </front>
-          <format type="HTML" target="https://helixar.ai/labs/hdp"/>
         </reference>
 
-        <reference anchor="HDP-IMPL">
+        <reference anchor="HDP-IMPL"
+                   target="https://github.com/Helixar-AI/HDP">
           <front>
             <title>HDP TypeScript Reference Implementation</title>
             <author>
@@ -1270,10 +1273,8 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
             </author>
             <date year="2026"/>
           </front>
-          <format type="HTML" target="https://github.com/Helixar-AI/HDP"/>
         </reference>
 
-      </references>
     </references>
 
     <section anchor="complete-token-example" numbered="true" toc="default">
