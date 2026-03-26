@@ -118,6 +118,42 @@ describe('verifyPrincipalChain', () => {
     expect(result.failedAt).toBe(1)
   })
 
+  it('fails if a token in the chain is expired', async () => {
+    const alice = await generateKeyPair()
+    const bob = await generateKeyPair()
+
+    // T1: Alice issues with a very short lifetime (already expired)
+    const t1 = await issueToken({
+      sessionId: 'sess-mp-05',
+      principal: { id: 'alice', id_type: 'opaque' },
+      scope: { intent: 'task', data_classification: 'public', network_egress: false, persistence: false },
+      signingKey: alice.privateKey, keyId: 'alice-key',
+      expiresInMs: 1, // expires immediately
+    })
+
+    // T2: Bob re-authorizes, long lifetime
+    const t2 = await issueReAuthToken({
+      original: t1,
+      principal: { id: 'bob', id_type: 'opaque' },
+      scope: { intent: 'task', data_classification: 'public', network_egress: false, persistence: false },
+      signingKey: bob.privateKey, keyId: 'bob-key',
+    })
+
+    // Verify with `now` advanced past T1's expiry
+    const futureNow = Date.now() + 60_000
+    const result = await verifyPrincipalChain(
+      [
+        { token: t1, publicKey: alice.publicKey },
+        { token: t2, publicKey: bob.publicKey },
+      ],
+      { currentSessionId: 'sess-mp-05', now: futureNow }
+    )
+
+    expect(result.valid).toBe(false)
+    expect(result.failedAt).toBe(0) // T1 fails first
+    expect(result.error?.code).toBe('TOKEN_EXPIRED')
+  })
+
   it('returns empty result for empty chain', async () => {
     const result = await verifyPrincipalChain([], { currentSessionId: 'sess' })
     expect(result.valid).toBe(false)
