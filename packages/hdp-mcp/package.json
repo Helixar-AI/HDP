@@ -1,0 +1,36 @@
+{
+  "name": "@helixar_ai/hdp-mcp",
+  "version": "0.1.0",
+  "description": "HDP middleware for MCP (Model Context Protocol) servers",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@helixar_ai/hdp": "file:../.."
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "tsup": "^8.5.1",
+    "vitest": "^4.1.1",
+    "@types/node": "^25.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Helixar-AI/HDP.git",
+    "directory": "packages/hdp-mcp"
+  },
+  "license": "CC-BY-4.0"
+}

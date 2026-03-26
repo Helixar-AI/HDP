@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.js.map
+
+# Claude / AI planning artifacts — not for public repo
+docs/superpowers/
+.DS_Store
