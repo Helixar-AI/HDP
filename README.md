@@ -1,6 +1,36 @@
-# @helixar_ai/hdp
+<div align="center">
 
-**Human Delegation Provenance Protocol — TypeScript reference implementation.**
+# HDP
+### Human Delegation Provenance Protocol
+
+**A cryptographic chain-of-custody protocol for agentic AI systems.**
+*Every action an agent takes, traceable back to the human who authorized it.*
+
+<br/>
+
+[![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&color=0ea5e9&label=npm)](https://www.npmjs.com/package/@helixar_ai/hdp)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/Helixar-AI/HDP/ci.yml?branch=main&style=flat-square&label=tests&logo=github)](https://github.com/Helixar-AI/HDP/actions)
+[![Offline Verified](https://img.shields.io/badge/verification-fully%20offline-22c55e?style=flat-square)](https://github.com/Helixar-AI/HDP/blob/main/tests/security/offline-verification.test.ts)
+[![Ed25519](https://img.shields.io/badge/crypto-Ed25519-7c3aed?style=flat-square)](https://datatracker.ietf.org/doc/html/rfc8032)
+[![MCP Ready](https://img.shields.io/badge/MCP-middleware%20included-f97316?style=flat-square)](./packages/hdp-mcp)
+
+<br/>
+
+```
+Human ──signs──▶ Token ──delegates──▶ Agent A ──delegates──▶ Agent B ──delegates──▶ Agent C
+                   │                     │                      │                      │
+                   └── Ed25519 root sig  └── hop sig 1          └── hop sig 2          └── hop sig 3
+                           │                    │                      │                      │
+                           └────────────────────┴──────────────────────┴──────────────────────┘
+                                              verified offline, no registry, no network
+```
+
+</div>
+
+---
 
 HDP captures, structures, cryptographically signs, and verifies the human delegation context in agentic AI systems. When a person authorizes an agent to act — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain of custody from the authorizing human to every action taken on their behalf.
 
@@ -172,4 +202,4 @@ Full protocol specification: [https://helixar.ai/labs/hdp](https://helixar.ai/la
 
 ## License
 
-ISC
+[CC BY 4.0](./LICENSE) — Helixar Limited

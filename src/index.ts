@@ -20,6 +20,8 @@ export { validateToken } from './schema/validator.js'
 
 // Key management
 export { generateKeyPair, exportPublicKey, importPublicKey, exportPrivateKey, importPrivateKey } from './crypto/keys.js'
+export { KeyRegistry } from './crypto/registry.js'
+export type { WellKnownKey, WellKnownKeyDocument } from './crypto/registry.js'
 
 // Token lifecycle
 export { TokenBuilder } from './token/builder.js'
@@ -27,6 +29,12 @@ export { issueToken } from './token/issuer.js'
 export type { IssueTokenOptions } from './token/issuer.js'
 export { verifyToken } from './token/verifier.js'
 export type { VerificationOptions, VerificationResult } from './token/verifier.js'
+export { issueReAuthToken } from './token/reauth.js'
+export type { ReAuthOptions, ReAuthToken } from './token/reauth.js'
+
+// Multi-principal delegation
+export { verifyPrincipalChain } from './token/multi-principal.js'
+export type { PrincipalChainEntry, PrincipalChainVerificationResult, CoAuthorizationRequest } from './token/multi-principal.js'
 
 // Chain management
 export { extendChain } from './chain/extender.js'
