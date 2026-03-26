@@ -22,8 +22,16 @@ export interface WellKnownKeyDocument {
 export class KeyRegistry {
   private keys = new Map<string, Uint8Array>()
 
-  /** Register a public key by kid. */
+  /**
+   * Register a public key by kid.
+   * @throws {Error} if the key is not a valid 32-byte Ed25519 public key.
+   * @note Silently overwrites any previously registered key for the same kid.
+   *       To rotate a key safely, call `revoke(kid)` first.
+   */
   register(kid: string, publicKey: Uint8Array): void {
+    if (publicKey.length !== 32) {
+      throw new Error(`Invalid Ed25519 public key for kid '${kid}': expected 32 bytes, got ${publicKey.length}`)
+    }
     this.keys.set(kid, publicKey)
   }
 
@@ -59,10 +67,18 @@ export class KeyRegistry {
   /**
    * Load from a well-known key document (e.g. fetched from /.well-known/hdp-keys.json).
    * Adds all keys to the registry; does not clear existing entries.
+   * @throws {Error} if any entry has an unrecognized algorithm or an invalid public key.
    */
   loadWellKnown(doc: WellKnownKeyDocument): void {
     for (const entry of doc.keys) {
-      this.keys.set(entry.kid, importPublicKey(entry.pub))
+      if (entry.alg !== 'Ed25519') {
+        throw new Error(`Unsupported algorithm '${entry.alg}' for kid '${entry.kid}': only Ed25519 is supported`)
+      }
+      const pubKey = importPublicKey(entry.pub)
+      if (pubKey.length !== 32) {
+        throw new Error(`Invalid Ed25519 public key for kid '${entry.kid}': expected 32 bytes, got ${pubKey.length}`)
+      }
+      this.keys.set(entry.kid, pubKey)
     }
   }
 }

@@ -15,6 +15,7 @@
 import { verifyToken } from './verifier.js'
 import type { HdpToken } from '../types/token.js'
 import type { VerificationOptions, VerificationResult } from './verifier.js'
+import { HdpChainIntegrityError } from '../types/errors.js'
 import type { HdpError } from '../types/errors.js'
 
 export interface PrincipalChainEntry {
@@ -49,13 +50,23 @@ export async function verifyPrincipalChain(
   opts: Omit<VerificationOptions, 'publicKey'>
 ): Promise<PrincipalChainVerificationResult> {
   if (chain.length === 0) {
-    return { valid: false, results: [], error: undefined }
+    return { valid: false, results: [], error: new HdpChainIntegrityError('principal chain must contain at least one entry') }
   }
 
   const results: VerificationResult[] = []
 
+  const rootSessionId = chain[0].token.header.session_id
+
   for (let i = 0; i < chain.length; i++) {
     const { token, publicKey } = chain[i]
+
+    // Verify all tokens share the same session_id as the root
+    if (token.header.session_id !== rootSessionId) {
+      const err = new HdpChainIntegrityError(
+        `token at index ${i} has session_id '${token.header.session_id}', expected '${rootSessionId}'`
+      )
+      return { valid: false, failedAt: i, error: err, results }
+    }
 
     // Verify parent_token_id linkage (from index 1 onwards)
     if (i > 0) {
