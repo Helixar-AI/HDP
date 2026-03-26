@@ -1,0 +1,1352 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="rfc2629.xslt"?>
+<!DOCTYPE rfc [
+  <!ENTITY nbsp    "&#160;">
+  <!ENTITY zwsp   "&#8203;">
+  <!ENTITY nbhy   "&#8209;">
+  <!ENTITY wj     "&#8288;">
+]>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     category="info"
+     docName="draft-helixar-hdp-agentic-delegation-00"
+     ipr="trust200902"
+     obsoletes=""
+     updates=""
+     submissionType="IETF"
+     xml:lang="en"
+     version="3">
+
+  <front>
+    <title abbrev="HDP Agentic Delegation">
+      Human Delegation Provenance Protocol (HDP):
+      Cryptographic Chain-of-Custody for Agentic AI Systems
+    </title>
+
+    <seriesInfo name="Internet-Draft" value="draft-helixar-hdp-agentic-delegation-00"/>
+
+    <author fullname="Helixar Limited" initials="" surname="Helixar">
+      <organization>Helixar Limited</organization>
+      <address>
+        <email>protocol@helixar.ai</email>
+        <uri>https://helixar.ai</uri>
+      </address>
+    </author>
+
+    <date year="2026" month="March"/>
+
+    <area>Security</area>
+    <workgroup>Internet Engineering Task Force</workgroup>
+
+    <keyword>agentic AI</keyword>
+    <keyword>delegation</keyword>
+    <keyword>provenance</keyword>
+    <keyword>Ed25519</keyword>
+    <keyword>token</keyword>
+    <keyword>chain of custody</keyword>
+    <keyword>human authorization</keyword>
+
+    <abstract>
+      <t>
+        Agentic AI systems operate on behalf of human principals, often
+        delegating tasks through multi-step chains of AI agents. There is
+        currently no standard mechanism to record who authorized an agent to
+        act, under what scope, and through what chain of delegation — in a
+        way that can be verified offline, without a central registry, and
+        without third-party trust anchors.
+      </t>
+      <t>
+        This document specifies the Human Delegation Provenance Protocol
+        (HDP) version 0.1, a lightweight token-based protocol that captures,
+        structures, cryptographically signs, and verifies human delegation
+        context in agentic AI systems. An HDP token binds a human
+        authorization event to a session, records each agent's delegation
+        action as a signed hop in an append-only chain, and enables any
+        participant to verify the full provenance record using only the
+        issuer's Ed25519 public key and the current session identifier.
+        Verification is fully offline. No registry lookup, no network call,
+        and no third-party trust anchor is required.
+      </t>
+    </abstract>
+  </front>
+
+  <middle>
+
+    <!-- ================================================================ -->
+    <section anchor="introduction" numbered="true" toc="default">
+      <name>Introduction</name>
+
+      <t>
+        Autonomous AI agents are increasingly used to execute consequential
+        actions: sending emails, modifying files, running code, calling APIs,
+        and transacting on behalf of users. When a human authorizes an
+        orchestrator agent, which in turn delegates to sub-agents, which
+        further delegate to tool-execution agents, the originating human
+        authorization becomes disconnected from the terminal action. There is
+        no standard record of the authorization chain.
+      </t>
+      <t>
+        This gap creates accountability, auditability, and safety problems:
+      </t>
+      <ul spacing="normal">
+        <li>
+          Downstream agents cannot verify that the action they are being asked
+          to perform was actually authorized by a human.
+        </li>
+        <li>
+          Post-hoc audits cannot reconstruct who approved what, and when.
+        </li>
+        <li>
+          Prompt injection attacks — where malicious content in the
+          environment instructs an agent to act — cannot be distinguished
+          from legitimate human delegation.
+        </li>
+      </ul>
+      <t>
+        HDP addresses this by defining a token that:
+      </t>
+      <ul spacing="normal">
+        <li>Records the human principal, their declared scope, and the
+        session binding at issuance.</li>
+        <li>Accumulates a cryptographically signed hop record for each
+        agent that handles the token.</li>
+        <li>Allows any recipient to verify the entire chain — root
+        signature plus all hop signatures — using only the issuer's
+        Ed25519 public key and the session identifier.</li>
+      </ul>
+
+      <section anchor="motivation" numbered="true" toc="default">
+        <name>Motivation</name>
+        <t>
+          The need for agentic delegation provenance is not hypothetical.
+          Production deployments of AI orchestration systems (LangChain,
+          AutoGPT, CrewAI, and similar frameworks) today pass natural language
+          task descriptions between agents with no cryptographic binding to the
+          original human authorization. The operational risk compounds as
+          models become more capable and agents are granted access to higher-
+          consequence tools.
+        </t>
+        <t>
+          A provenance token that travels alongside the task — tamper-evident,
+          offline-verifiable, and scoped to what the human actually approved —
+          provides the foundation for auditable, accountable agentic systems.
+        </t>
+      </section>
+
+      <section anchor="design-goals" numbered="true" toc="default">
+        <name>Design Goals</name>
+        <t>HDP is designed with the following goals in order of priority:</t>
+        <ol spacing="normal" type="1">
+          <li><strong>Offline verifiability.</strong> Verification MUST require
+          only a public key and session ID. No network call, registry lookup,
+          or third-party endpoint is required.</li>
+          <li><strong>Self-sovereignty.</strong> Any organization MUST be able
+          to issue and verify HDP tokens without registering with a central
+          authority or anchoring to a third-party key.</li>
+          <li><strong>Tamper evidence.</strong> Any modification to a token —
+          in its header, principal, scope, or any hop — MUST be detectable by
+          the verification pipeline.</li>
+          <li><strong>Minimal footprint.</strong> The protocol MUST be
+          implementable in any language with Ed25519 and JSON support. No
+          mandatory infrastructure beyond key management is required.</li>
+          <li><strong>Privacy by design.</strong> Principal identity fields
+          MUST be separable from the audit-relevant parts of the token, so
+          tokens can be transmitted to agents without exposing PII.</li>
+        </ol>
+      </section>
+
+      <section anchor="relationship-to-ipp" numbered="true" toc="default">
+        <name>Relationship to IPP (draft-haberkamp-ipp-00)</name>
+        <t>
+          The Intent Provenance Protocol
+          <xref target="I-D.haberkamp-ipp"/> addresses the same problem space.
+          HDP and IPP share the use of Ed25519 signatures and append-only
+          provenance chains but make different architectural trade-offs, which
+          are detailed in <xref target="comparison"/>. The two protocols are
+          not interoperable. HDP is offered as a distinct design point, not a
+          revision of IPP.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="conventions" numbered="true" toc="default">
+      <name>Conventions and Definitions</name>
+      <t>
+        The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+        "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY",
+        and "OPTIONAL" in this document are to be interpreted as described
+        in BCP 14 <xref target="RFC2119"/> <xref target="RFC8174"/> when,
+        and only when, they appear in all capitals, as shown here.
+      </t>
+      <dl spacing="normal" newline="false">
+        <dt>Issuer:</dt>
+        <dd>The system or person that creates and signs an HDP token on
+        behalf of a human principal.</dd>
+        <dt>Principal:</dt>
+        <dd>The human who authorized the agentic task. Represented in the
+        token's <tt>principal</tt> object.</dd>
+        <dt>Agent:</dt>
+        <dd>Any AI system, model, or automated process that receives and
+        acts upon an HDP token.</dd>
+        <dt>Hop:</dt>
+        <dd>A single delegation event, recorded as a signed entry in the
+        token's <tt>chain</tt> array.</dd>
+        <dt>Root signature:</dt>
+        <dd>The Ed25519 signature over the token's header, principal, and
+        scope, computed by the issuer at token creation time.</dd>
+        <dt>Hop signature:</dt>
+        <dd>The Ed25519 signature computed by an extending agent over the
+        cumulative chain state at the time of extension.</dd>
+        <dt>Session:</dt>
+        <dd>A logical unit of work identified by a <tt>session_id</tt>
+        string, established between the issuer and the agent framework
+        before the token is issued.</dd>
+      </dl>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="token-structure" numbered="true" toc="default">
+      <name>Token Structure</name>
+      <t>
+        An HDP token is a JSON object with six top-level fields. The token
+        MUST conform to the following structure. All integer timestamps are
+        Unix milliseconds (milliseconds since 1970-01-01T00:00:00Z).
+      </t>
+
+      <figure anchor="token-overview-diagram">
+        <name>HDP Token Top-Level Structure</name>
+        <artwork type="ascii-art"><![CDATA[
+{
+  "hdp"       : "0.1",          // protocol version
+  "header"    : { ... },        // session binding + lifecycle
+  "principal" : { ... },        // authorizing human
+  "scope"     : { ... },        // authorized intent + constraints
+  "chain"     : [ ... ],        // delegation hops (append-only)
+  "signature" : { ... }         // root Ed25519 signature
+}
+        ]]></artwork>
+      </figure>
+
+      <section anchor="header" numbered="true" toc="default">
+        <name>Header</name>
+        <t>
+          The <tt>header</tt> object carries token lifecycle and session
+          binding fields.
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "token_id"        : "550e8400-e29b-41d4-a716-446655440000",
+  "issued_at"       : 1711483200000,
+  "expires_at"      : 1711569600000,
+  "session_id"      : "sess-20260326-abc123",
+  "version"         : "0.1",
+  "parent_token_id" : "..."     // OPTIONAL: re-authorization linkage
+}
+        ]]></sourcecode>
+        <dl spacing="normal" newline="false">
+          <dt>token_id:</dt>
+          <dd>REQUIRED. UUID v4. Unique identifier for this token.</dd>
+          <dt>issued_at:</dt>
+          <dd>REQUIRED. Unix milliseconds. Time of issuance.</dd>
+          <dt>expires_at:</dt>
+          <dd>REQUIRED. Unix milliseconds. Token MUST NOT be accepted after
+          this time. Default lifetime is 24 hours.</dd>
+          <dt>session_id:</dt>
+          <dd>REQUIRED. Opaque string. Established out-of-band between
+          issuer and agent framework before token issuance. Provides
+          replay defense: a token is only valid within the session for
+          which it was issued.</dd>
+          <dt>version:</dt>
+          <dd>REQUIRED. MUST equal the value of the top-level <tt>hdp</tt>
+          field.</dd>
+          <dt>parent_token_id:</dt>
+          <dd>OPTIONAL. If present, identifies the token this token
+          supersedes in a re-authorization chain. See
+          <xref target="reauthorization"/>.</dd>
+        </dl>
+      </section>
+
+      <section anchor="principal" numbered="true" toc="default">
+        <name>Principal</name>
+        <t>
+          The <tt>principal</tt> object identifies the authorizing human.
+          It MUST contain <tt>id</tt> and <tt>id_type</tt>. All other
+          fields are OPTIONAL.
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "id"             : "usr_alice_opaque",
+  "id_type"        : "opaque",
+  "display_name"   : "Alice Chen",
+  "poh_credential" : "...",
+  "metadata"       : {}
+}
+        ]]></sourcecode>
+        <t>
+          The <tt>id_type</tt> field MUST be one of the following registered
+          values, or a custom string prefixed with <tt>x-</tt>:
+        </t>
+        <ul spacing="normal">
+          <li><tt>opaque</tt>: Application-defined identifier. No resolution
+          semantics are implied.</li>
+          <li><tt>email</tt>: RFC 5321 email address.</li>
+          <li><tt>uuid</tt>: RFC 4122 UUID.</li>
+          <li><tt>did</tt>: W3C Decentralized Identifier
+          <xref target="W3C.DID"/>. DID resolution is application-
+          defined and not required by this protocol.</li>
+          <li><tt>poh</tt>: A Proof-of-Humanity credential identifier.
+          Verification semantics are application-defined; see
+          <xref target="poh"/>.</li>
+        </ul>
+        <t>
+          HDP does not mandate any specific identity model. The <tt>did</tt>
+          <tt>id_type</tt> is available for deployments with existing DID
+          infrastructure; it is not required.
+        </t>
+      </section>
+
+      <section anchor="scope" numbered="true" toc="default">
+        <name>Scope</name>
+        <t>
+          The <tt>scope</tt> object records what the human authorized. It
+          is signed as part of the root signature and MUST NOT be modified
+          after issuance.
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "intent"               : "Analyze Q1 sales data and produce a report.",
+  "authorized_tools"     : ["database_read", "file_write"],
+  "authorized_resources" : ["db://sales/q1-2026"],
+  "data_classification"  : "confidential",
+  "network_egress"       : false,
+  "persistence"          : true,
+  "max_hops"             : 3
+}
+        ]]></sourcecode>
+        <dl spacing="normal" newline="false">
+          <dt>intent:</dt>
+          <dd>REQUIRED. Natural language description of the authorized task.
+          Free-form string. This is the human-readable authorization
+          statement.</dd>
+          <dt>authorized_tools:</dt>
+          <dd>OPTIONAL. Array of tool identifiers the principal has
+          explicitly authorized. Enforcement is application-defined.</dd>
+          <dt>authorized_resources:</dt>
+          <dd>OPTIONAL. Array of resource identifiers (URIs, paths, etc.)
+          the principal has authorized access to.</dd>
+          <dt>data_classification:</dt>
+          <dd>REQUIRED. One of: <tt>public</tt>, <tt>internal</tt>,
+          <tt>confidential</tt>, <tt>restricted</tt>. Expresses the
+          sensitivity level of data the agent is authorized to access.</dd>
+          <dt>network_egress:</dt>
+          <dd>REQUIRED. Boolean. Whether the agent is authorized to make
+          outbound network requests.</dd>
+          <dt>persistence:</dt>
+          <dd>REQUIRED. Boolean. Whether the agent is authorized to write
+          persistent state.</dd>
+          <dt>max_hops:</dt>
+          <dd>OPTIONAL. Positive integer. Maximum number of delegation hops
+          permitted. Verification MUST reject tokens whose chain length
+          exceeds this value.</dd>
+        </dl>
+        <t>
+          HDP does not mandate a central taxonomy for <tt>intent</tt>,
+          <tt>authorized_tools</tt>, or <tt>authorized_resources</tt>.
+          These are self-described by the issuer. Semantic validation of
+          agent actions against declared scope is an application-layer
+          concern.
+        </t>
+      </section>
+
+      <section anchor="chain" numbered="true" toc="default">
+        <name>Chain</name>
+        <t>
+          The <tt>chain</tt> array is append-only. Each element records a
+          single delegation event (hop). The array is empty at issuance and
+          grows as the token passes through agents. Agents MUST NOT remove
+          or modify existing entries.
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "seq"               : 1,
+  "agent_id"          : "orchestrator-v2",
+  "agent_type"        : "orchestrator",
+  "agent_fingerprint" : "sha256:abc123...",
+  "timestamp"         : 1711483260000,
+  "action_summary"    : "Decompose analysis task; delegate to sub-agents.",
+  "parent_hop"        : 0,
+  "hop_signature"     : "<base64url-encoded Ed25519 signature>"
+}
+        ]]></sourcecode>
+        <dl spacing="normal" newline="false">
+          <dt>seq:</dt>
+          <dd>REQUIRED. Positive integer. Sequential index, starting at 1.
+          MUST be exactly one greater than the previous hop's seq. Gaps
+          in sequence are a protocol violation.</dd>
+          <dt>agent_id:</dt>
+          <dd>REQUIRED. Identifier of the agent adding this hop.</dd>
+          <dt>agent_type:</dt>
+          <dd>REQUIRED. One of: <tt>orchestrator</tt>, <tt>sub-agent</tt>,
+          <tt>tool-executor</tt>, <tt>custom</tt>.</dd>
+          <dt>agent_fingerprint:</dt>
+          <dd>OPTIONAL. Model or binary fingerprint for the acting agent.</dd>
+          <dt>timestamp:</dt>
+          <dd>REQUIRED. Unix milliseconds. Time of hop extension.</dd>
+          <dt>action_summary:</dt>
+          <dd>REQUIRED. Human-readable description of the action this
+          agent intends to take.</dd>
+          <dt>parent_hop:</dt>
+          <dd>REQUIRED. Non-negative integer. Index of the hop that
+          triggered this delegation, where 0 indicates the root (human)
+          authorization.</dd>
+          <dt>hop_signature:</dt>
+          <dd>REQUIRED. Base64url-encoded Ed25519 signature. See
+          <xref target="hop-signing"/>. Absence is a protocol violation
+          per Rule 6 of <xref target="chain-rules"/>.</dd>
+        </dl>
+      </section>
+
+      <section anchor="signature-field" numbered="true" toc="default">
+        <name>Signature</name>
+        <t>
+          The <tt>signature</tt> object carries the root signature computed
+          by the issuer.
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "kid"   : "alice-signing-key-v1",
+  "alg"   : "Ed25519",
+  "value" : "<base64url-encoded Ed25519 signature over canonical JSON>"
+}
+        ]]></sourcecode>
+        <t>
+          The <tt>alg</tt> field MUST be <tt>Ed25519</tt> for HDP v0.1.
+          The <tt>kid</tt> field SHOULD be used by verifiers to identify
+          the correct public key when multiple keys are in circulation.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="cryptographic-signing" numbered="true" toc="default">
+      <name>Cryptographic Signing</name>
+
+      <section anchor="root-signing" numbered="true" toc="default">
+        <name>Root Signature</name>
+        <t>
+          The root signature is computed by the issuer at token creation
+          time. It covers the token's header, principal, and scope — the
+          fields that constitute the human authorization event.
+        </t>
+        <t>The signing procedure is:</t>
+        <ol spacing="normal" type="1">
+          <li>
+            Construct the unsigned token object containing the
+            <tt>hdp</tt>, <tt>header</tt>, <tt>principal</tt>,
+            <tt>scope</tt>, and <tt>chain</tt> (empty array at issuance)
+            fields.
+          </li>
+          <li>
+            Serialize the object to canonical JSON using RFC 8785
+            <xref target="RFC8785"/> (JSON Canonicalization Scheme).
+            This ensures deterministic byte representation across
+            implementations and platforms.
+          </li>
+          <li>
+            Compute the Ed25519 <xref target="RFC8032"/> signature
+            over the canonical JSON bytes using the issuer's private key.
+          </li>
+          <li>
+            Encode the signature bytes as base64url
+            <xref target="RFC4648"/> (no padding).
+          </li>
+          <li>
+            Attach the <tt>signature</tt> object (<tt>kid</tt>,
+            <tt>alg</tt>, <tt>value</tt>) to the token.
+          </li>
+        </ol>
+        <t>
+          The <tt>signature</tt> field itself MUST NOT be included in the
+          canonical JSON payload before signing. The signed payload is
+          deterministically recoverable by stripping the <tt>signature</tt>
+          field from the complete token and re-serializing with RFC 8785.
+        </t>
+      </section>
+
+      <section anchor="hop-signing" numbered="true" toc="default">
+        <name>Hop Signature</name>
+        <t>
+          Each hop MUST carry a <tt>hop_signature</tt>. This signature
+          binds the new hop record to the entire accumulated delegation
+          history and to the root signature, making retroactive chain
+          modification detectable.
+        </t>
+        <t>The hop signing procedure is:</t>
+        <ol spacing="normal" type="1">
+          <li>
+            Construct the new hop record (all fields except
+            <tt>hop_signature</tt>).
+          </li>
+          <li>
+            Build the signing payload as a JSON array:
+            <tt>[hop_1, hop_2, ..., hop_(n-1), new_hop_unsigned]</tt>
+            where <tt>hop_1</tt> through <tt>hop_(n-1)</tt> are the
+            previously signed hops (WITH their <tt>hop_signature</tt>
+            fields) and <tt>new_hop_unsigned</tt> is the new hop record
+            WITHOUT its <tt>hop_signature</tt>.
+          </li>
+          <li>
+            Prepend the root signature value (base64url string) to the
+            array as its first element:
+            <tt>[root_sig_value, hop_1, ..., new_hop_unsigned]</tt>.
+            This chains the hop signature to the root.
+          </li>
+          <li>
+            Serialize the array to canonical JSON per RFC 8785.
+          </li>
+          <li>
+            Compute the Ed25519 signature over the canonical JSON bytes
+            using the extending agent's private key.
+          </li>
+          <li>
+            Encode as base64url and attach as the <tt>hop_signature</tt>
+            field on the new hop record.
+          </li>
+          <li>
+            Append the signed hop to the token's <tt>chain</tt> array.
+          </li>
+        </ol>
+        <t>
+          The asymmetry between previously-signed hops (WITH
+          <tt>hop_signature</tt>) and the new hop (WITHOUT
+          <tt>hop_signature</tt>) in step 2 is intentional and critical.
+          The verifier MUST reconstruct this exact payload structure
+          when verifying each hop. See <xref target="verification"/>.
+        </t>
+      </section>
+
+      <section anchor="chain-rules" numbered="true" toc="default">
+        <name>Chain Integrity Rules</name>
+        <t>The following rules govern chain construction and MUST be
+        enforced by both extenders and verifiers:</t>
+        <ol spacing="normal" type="1">
+          <li>Hop <tt>seq</tt> values MUST start at 1 and increment by
+          exactly 1. No gaps are permitted.</li>
+          <li>Existing hop records MUST NOT be modified or removed.</li>
+          <li>A hop's <tt>parent_hop</tt> MUST reference a valid prior
+          hop index (0 for the root human authorization, or the
+          <tt>seq</tt> value of a prior hop).</li>
+          <li>If <tt>scope.max_hops</tt> is set, the chain length MUST
+          NOT exceed it. A token with a full chain MUST NOT be
+          extended.</li>
+          <li>Each hop's <tt>timestamp</tt> SHOULD be monotonically
+          non-decreasing.</li>
+          <li>The <tt>hop_signature</tt> field MUST be present on every
+          hop. A hop without a <tt>hop_signature</tt> is a protocol
+          violation and MUST cause verification to fail.</li>
+        </ol>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="verification" numbered="true" toc="default">
+      <name>Verification Pipeline</name>
+      <t>
+        A verifier MUST execute the following seven steps in order. A
+        failure at any step MUST cause immediate rejection with an
+        appropriate error. The verifier MUST NOT proceed to subsequent
+        steps after a failure.
+      </t>
+
+      <ol spacing="normal" type="1">
+        <li>
+          <strong>Version check.</strong>
+          The <tt>hdp</tt> field MUST contain a recognized protocol
+          version string. For this specification, the only recognized
+          value is <tt>"0.1"</tt>.
+        </li>
+        <li>
+          <strong>Expiry check.</strong>
+          The token's <tt>header.expires_at</tt> MUST be strictly
+          greater than the current time. Expired tokens MUST be
+          rejected.
+        </li>
+        <li>
+          <strong>Root signature verification.</strong>
+          Reconstruct the canonical JSON payload by stripping the
+          <tt>signature</tt> field and serializing the remaining token
+          object per RFC 8785. Verify the Ed25519 signature in
+          <tt>signature.value</tt> against this payload using the
+          issuer's public key. A failure indicates tampering with the
+          header, principal, or scope.
+        </li>
+        <li>
+          <strong>Hop sequence integrity.</strong>
+          For each hop in <tt>chain</tt>, verify that
+          <tt>hop.seq == (index + 1)</tt>. Any gap or duplication
+          MUST cause rejection.
+        </li>
+        <li>
+          <strong>Hop signature verification.</strong>
+          For each hop at index <tt>i</tt>:
+          <ol spacing="normal" type="a">
+            <li>Verify that <tt>hop_signature</tt> is present. Absence
+            MUST cause rejection.</li>
+            <li>Reconstruct the signing payload as described in
+            <xref target="hop-signing"/>, using the hops at indices
+            0...(i-1) with their signatures, plus the hop at index
+            <tt>i</tt> without its <tt>hop_signature</tt>, prepended
+            by the root signature value.</li>
+            <li>Serialize the payload per RFC 8785 and verify the
+            <tt>hop_signature</tt> against the issuer's public key
+            (the same key used for the root signature in HDP v0.1).</li>
+          </ol>
+        </li>
+        <li>
+          <strong>max_hops check.</strong>
+          If <tt>scope.max_hops</tt> is defined, the length of
+          <tt>chain</tt> MUST NOT exceed it.
+        </li>
+        <li>
+          <strong>Session binding check.</strong>
+          The token's <tt>header.session_id</tt> MUST exactly match the
+          <tt>session_id</tt> provided by the verifying application. This
+          prevents token replay across sessions. See
+          <xref target="security-replay"/>.
+        </li>
+      </ol>
+
+      <t>
+        An optional eighth step MAY be performed if the application has
+        registered a Proof-of-Humanity verifier: if
+        <tt>principal.poh_credential</tt> is present and a verifier
+        callback is configured, the credential MUST be validated by that
+        callback. See <xref target="poh"/>.
+      </t>
+
+      <t>
+        Verification is fully offline. Steps 1–7 require only the issuer's
+        Ed25519 public key and the current session identifier. No network
+        call, registry lookup, or third-party contact is required at
+        any step.
+      </t>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="reauthorization" numbered="true" toc="default">
+      <name>Re-Authorization</name>
+      <t>
+        Long-running or streaming sessions may exhaust the <tt>max_hops</tt>
+        limit, require scope expansion, or encounter situations where a
+        high-risk action warrants fresh human confirmation. In these cases,
+        the issuer (acting on behalf of the human principal) issues a new
+        token that supersedes the original.
+      </t>
+      <t>
+        Re-authorization is indicated by setting
+        <tt>header.parent_token_id</tt> to the <tt>token_id</tt> of the
+        token being superseded. This field MUST be set before computing the
+        root signature, so the parentage link is cryptographically covered
+        by the new token's root signature.
+      </t>
+      <t>
+        A re-authorized token:
+      </t>
+      <ul spacing="normal">
+        <li>Has a new <tt>token_id</tt>, <tt>issued_at</tt>, and
+        <tt>expires_at</tt>.</li>
+        <li>Inherits <tt>session_id</tt>, <tt>principal</tt>, and
+        <tt>scope</tt> from the original unless explicitly overridden.</li>
+        <li>Starts with an empty <tt>chain</tt> (delegation count
+        resets).</li>
+        <li>Records <tt>parent_token_id</tt> pointing to the original,
+        creating an auditable lineage of scope evolution.</li>
+      </ul>
+      <t>
+        Verifiers that require re-authorization chain traversal SHOULD
+        retain all tokens in a session and verify the full
+        <tt>parent_token_id</tt> linkage.
+      </t>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="multi-principal" numbered="true" toc="default">
+      <name>Multi-Principal Delegation</name>
+      <t>
+        HDP v0.1 supports one principal per token. Joint authorization
+        by multiple humans is achieved by sequential chaining: Human A
+        issues token T1; Human B issues token T2 with
+        <tt>parent_token_id</tt> equal to T1's <tt>token_id</tt>.
+        Each token is independently signed with its issuer's key.
+      </t>
+      <t>
+        To verify a multi-principal chain, the verifier MUST:
+      </t>
+      <ol spacing="normal" type="1">
+        <li>Verify each token individually against its issuer's public
+        key using the standard 7-step pipeline.</li>
+        <li>Verify that <tt>T[i].header.parent_token_id == T[i-1].header.token_id</tt>
+        for all i &gt; 0.</li>
+        <li>Verify that all tokens in the chain share the same
+        <tt>session_id</tt>.</li>
+      </ol>
+      <t>
+        This pattern provides joint authorization auditably without
+        requiring a threshold signature scheme. Each principal's
+        authorization is a distinct signed artifact. A future version
+        of HDP (v0.2) is planned to introduce simultaneous multi-
+        signature primitives using threshold signature schemes.
+      </t>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="transport" numbered="true" toc="default">
+      <name>Transport</name>
+
+      <section anchor="http-header" numbered="true" toc="default">
+        <name>HTTP Header: X-HDP-Token</name>
+        <t>
+          HDP tokens MAY be transmitted in HTTP requests and responses
+          using the <tt>X-HDP-Token</tt> header. The header value is the
+          base64url encoding (RFC 4648, no padding) of the UTF-8
+          JSON serialization of the complete token object.
+        </t>
+        <figure anchor="http-header-example">
+          <name>X-HDP-Token HTTP Header Example</name>
+          <artwork type="http-message"><![CDATA[
+POST /api/task HTTP/1.1
+Host: agent.example.com
+X-HDP-Token: eyJoZHAiOiIwLjEiLCJoZWFkZXIiOnsi...
+Content-Type: application/json
+          ]]></artwork>
+        </figure>
+        <t>
+          Implementations MUST NOT include tokens in URL query parameters,
+          as this exposes sensitive data in server logs and browser history.
+        </t>
+      </section>
+
+      <section anchor="token-by-reference" numbered="true" toc="default">
+        <name>Token by Reference: X-HDP-Token-Ref</name>
+        <t>
+          When token size is a concern (e.g., large chains), the token
+          MAY be stored server-side and referenced by its
+          <tt>token_id</tt> using the <tt>X-HDP-Token-Ref</tt> header.
+        </t>
+        <figure anchor="token-ref-example">
+          <name>X-HDP-Token-Ref HTTP Header Example</name>
+          <artwork type="http-message"><![CDATA[
+POST /api/task HTTP/1.1
+Host: agent.example.com
+X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
+          ]]></artwork>
+        </figure>
+        <t>
+          Implementations using token-by-reference MUST secure the
+          token store and use transport-layer security (TLS) for all
+          reference resolution.
+        </t>
+      </section>
+
+      <section anchor="key-distribution" numbered="true" toc="default">
+        <name>Key Distribution: Well-Known Endpoint</name>
+        <t>
+          Issuers that wish to publish their Ed25519 public keys for
+          automated discovery SHOULD serve a JSON document at
+          <tt>/.well-known/hdp-keys.json</tt> with the following
+          structure:
+        </t>
+        <sourcecode type="json"><![CDATA[
+{
+  "keys": [
+    {
+      "kid" : "alice-signing-key-v1",
+      "alg" : "Ed25519",
+      "pub" : "<base64url-encoded 32-byte Ed25519 public key>"
+    }
+  ]
+}
+        ]]></sourcecode>
+        <t>
+          This format is intentionally minimal. Implementations MAY
+          extend it with additional metadata. The <tt>alg</tt> field
+          MUST be <tt>"Ed25519"</tt> for HDP v0.1 keys. Consumers MUST
+          reject entries with unrecognized <tt>alg</tt> values.
+          Consumers MUST validate that the decoded public key is
+          exactly 32 bytes.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="privacy" numbered="true" toc="default">
+      <name>Privacy Considerations</name>
+
+      <section anchor="minimum-disclosure" numbered="true" toc="default">
+        <name>Minimum-Disclosure Principal Fields</name>
+        <t>
+          The <tt>principal</tt> object may contain PII (email address,
+          display name). Issuers SHOULD apply the principle of minimum
+          disclosure when constructing tokens that will traverse multiple
+          agents. Specifically:
+        </t>
+        <ul spacing="normal">
+          <li>Use <tt>id_type: "opaque"</tt> with an application-internal
+          identifier rather than embedding the user's email address in
+          tokens that will be sent to third-party agents.</li>
+          <li>Omit <tt>display_name</tt> when the receiving agent does not
+          require a human-readable identity.</li>
+        </ul>
+        <t>
+          The token structure separates the identity fields
+          (<tt>principal</tt>) from the audit-relevant fields
+          (<tt>header</tt>, <tt>scope</tt>, <tt>chain</tt>). Implementations
+          MAY strip the <tt>principal</tt> object when forwarding tokens
+          to agents that do not require principal identity, while preserving
+          the integrity of the signature chain. Note that stripping
+          <tt>principal</tt> invalidates the root signature; stripped tokens
+          MUST be clearly marked as audit-only records and MUST NOT be
+          presented for signature verification.
+        </t>
+      </section>
+
+      <section anchor="gdpr" numbered="true" toc="default">
+        <name>Data Retention and the Right to Erasure</name>
+        <t>
+          HDP tokens may constitute personal data under applicable privacy
+          regulations (e.g., GDPR Article 4(1)) when the
+          <tt>principal.id</tt> or <tt>principal.display_name</tt> fields
+          contain directly or indirectly identifying information.
+        </t>
+        <t>
+          Implementations SHOULD:
+        </t>
+        <ul spacing="normal">
+          <li>Store tokens with explicit retention periods derived from
+          <tt>header.expires_at</tt>.</li>
+          <li>Provide deletion mechanisms that remove stored tokens
+          upon erasure requests.</li>
+          <li>Use opaque identifiers in <tt>principal.id</tt> where
+          possible, maintaining a separate mapping that can be
+          destroyed independently of the token audit log.</li>
+        </ul>
+      </section>
+
+      <section anchor="poh" numbered="true" toc="default">
+        <name>Proof of Humanity</name>
+        <t>
+          The optional <tt>principal.poh_credential</tt> field MAY carry
+          a credential attesting that the principal is a human (e.g., a
+          Worldcoin World ID proof, a CAPTCHA session token, or a
+          biometric attestation identifier). The HDP protocol does not
+          define the semantics of this field; verification is entirely
+          application-defined.
+        </t>
+        <t>
+          When a PoH verifier is configured, the verification pipeline
+          MUST validate the credential as the final step (after session
+          binding) and MUST reject the token if validation fails. The
+          verifier callback SHOULD be idempotent and SHOULD NOT have
+          side effects.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="security-considerations" numbered="true" toc="default">
+      <name>Security Considerations</name>
+
+      <section anchor="security-threat-model" numbered="true" toc="default">
+        <name>Threat Model</name>
+        <t>
+          HDP is designed to provide provenance and tamper evidence, not
+          runtime enforcement. An agent that exceeds its declared scope
+          is still a bad actor — HDP creates an evidence trail, not a
+          capability boundary. Applications requiring runtime enforcement
+          MUST implement it at the application layer using the HDP token
+          as audit input.
+        </t>
+      </section>
+
+      <section anchor="security-forgery" numbered="true" toc="default">
+        <name>Token Forgery</name>
+        <t>
+          A forged token — one whose <tt>header</tt>, <tt>principal</tt>,
+          or <tt>scope</tt> fields do not match the original issuance — will
+          fail Step 3 of the verification pipeline (root signature check).
+          The security of this step relies on the unforgeability of Ed25519
+          signatures and the collision resistance of SHA-512 (used
+          internally by Ed25519). An attacker who does not possess the
+          issuer's private key cannot produce a valid root signature for
+          a modified token.
+        </t>
+      </section>
+
+      <section anchor="security-chain-tampering" numbered="true" toc="default">
+        <name>Chain Tampering</name>
+        <t>
+          Modification of any hop in <tt>chain</tt> — including removal,
+          reordering, or field modification — will cause hop signature
+          verification (Step 5) to fail for the tampered hop and all
+          subsequent hops, because each hop signature covers all previous
+          hops. Insertion of a fabricated hop will similarly fail unless
+          the attacker possesses the issuer's private key.
+        </t>
+      </section>
+
+      <section anchor="security-replay" numbered="true" toc="default">
+        <name>Replay Attack Defense</name>
+        <t>
+          HDP provides two orthogonal replay defenses:
+        </t>
+        <ol spacing="normal" type="1">
+          <li><strong>Expiry.</strong> Tokens are short-lived
+          (<tt>expires_at</tt>, 24h default). An expired token is
+          rejected at Step 2 regardless of network conditions.</li>
+          <li><strong>Session binding.</strong> The token carries the
+          <tt>session_id</tt> established out-of-band between issuer
+          and verifier. A token is valid only within the session for
+          which it was issued. Even a non-expired token cannot be
+          replayed across sessions.</li>
+        </ol>
+        <t>
+          Together, these defenses ensure that a stolen token is useful
+          to an attacker only within the original session and only before
+          it expires. Applications with high security requirements SHOULD
+          use short token lifetimes (minutes, not hours).
+        </t>
+      </section>
+
+      <section anchor="security-prompt-injection" numbered="true" toc="default">
+        <name>Prompt Injection</name>
+        <t>
+          Prompt injection attacks attempt to cause an agent to act as if
+          it received instructions from a legitimate principal, when in
+          fact the instructions originate from adversarial content in the
+          agent's environment (e.g., a malicious web page or document).
+          HDP mitigates but does not fully prevent this attack.
+        </t>
+        <t>
+          An HDP-aware agent SHOULD refuse to extend a token's chain with
+          an <tt>action_summary</tt> that contradicts the token's
+          <tt>scope.intent</tt>. However, the protocol cannot enforce
+          this semantically — the comparison between action intent and
+          token scope is application-defined.
+        </t>
+        <t>
+          The primary mitigation HDP provides is that injected actions
+          MUST be recorded in the <tt>chain</tt> to be valid, creating an
+          auditable record that the action occurred. Post-hoc detection of
+          prompt injection attacks is thereby supported.
+        </t>
+      </section>
+
+      <section anchor="security-key-management" numbered="true" toc="default">
+        <name>Key Management</name>
+        <t>
+          The security of all HDP guarantees depends on the confidentiality
+          of the issuer's Ed25519 private key. Implementations MUST:
+        </t>
+        <ul spacing="normal">
+          <li>Store private keys in a secrets manager, HSM, or equivalent
+          secure enclave. Private keys MUST NOT be stored in source code,
+          configuration files, or environment variables in production.</li>
+          <li>Use distinct key pairs per environment (development, staging,
+          production).</li>
+          <li>Support key rotation by issuing new tokens with a new
+          <tt>kid</tt> while maintaining the old key in the verifier's
+          registry until all tokens signed with it have expired.</li>
+        </ul>
+      </section>
+
+      <section anchor="security-offline" numbered="true" toc="default">
+        <name>Offline Verification Guarantee</name>
+        <t>
+          HDP makes a strong architectural guarantee: a correct
+          implementation of the 7-step verification pipeline requires no
+          network calls, no registry lookups, and no third-party contact.
+          The complete trust state required for verification is:
+        </t>
+        <ul spacing="normal">
+          <li>The issuer's Ed25519 public key (32 bytes).</li>
+          <li>The current session identifier (string).</li>
+          <li>The current time (for expiry checking).</li>
+        </ul>
+        <t>
+          This guarantee enables HDP verification in air-gapped
+          environments, edge deployments with intermittent connectivity,
+          and latency-sensitive contexts where a network round-trip before
+          every action is unacceptable.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="iana" numbered="true" toc="default">
+      <name>IANA Considerations</name>
+
+      <section anchor="iana-headers" numbered="true" toc="default">
+        <name>HTTP Header Field Registration</name>
+        <t>
+          This document requests registration of the following HTTP header
+          fields in the "Hypertext Transfer Protocol (HTTP) Field Name
+          Registry" maintained at
+          &lt;https://www.iana.org/assignments/http-fields/&gt;.
+        </t>
+
+        <dl spacing="normal" newline="false">
+          <dt>Header Field Name:</dt><dd>X-HDP-Token</dd>
+          <dt>Status:</dt><dd>provisional</dd>
+          <dt>Reference:</dt><dd>This document, <xref target="http-header"/></dd>
+          <dt>Comments:</dt><dd>Carries a base64url-encoded HDP token for
+          agentic delegation provenance.</dd>
+        </dl>
+
+        <dl spacing="normal" newline="false">
+          <dt>Header Field Name:</dt><dd>X-HDP-Token-Ref</dd>
+          <dt>Status:</dt><dd>provisional</dd>
+          <dt>Reference:</dt><dd>This document, <xref target="token-by-reference"/></dd>
+          <dt>Comments:</dt><dd>Carries the UUID token_id of an HDP token
+          stored by reference.</dd>
+        </dl>
+      </section>
+
+      <section anchor="iana-media-type" numbered="true" toc="default">
+        <name>Media Type Registration</name>
+        <t>
+          This document requests registration of the media type
+          <tt>application/hdp-token+json</tt> in the "Media Types"
+          registry for use in contexts where the Content-Type of an
+          HDP token must be explicitly identified.
+        </t>
+      </section>
+    </section>
+
+    <!-- ================================================================ -->
+    <section anchor="comparison" numbered="true" toc="default">
+      <name>Comparison with Related Work</name>
+
+      <section anchor="comparison-ipp" numbered="true" toc="default">
+        <name>IPP (draft-haberkamp-ipp-00)</name>
+        <t>
+          The Intent Provenance Protocol
+          <xref target="I-D.haberkamp-ipp"/> and HDP address the same
+          root problem with different architectural trade-offs. The key
+          differences are:
+        </t>
+        <ol spacing="normal" type="1">
+          <li>
+            <strong>Revocation model.</strong>
+            IPP requires agents to poll a central revocation registry at
+            a configurable endpoint before every action, with a recommended
+            interval of 5,000 milliseconds. If the registry is unreachable,
+            agents cannot safely act. HDP uses short-lived tokens with
+            <tt>session_id</tt> binding as the revocation mechanism; no
+            registry polling is required at any point.
+          </li>
+          <li>
+            <strong>Trust anchor.</strong>
+            IPP tokens contain a <tt>genesis_seal</tt> — a cryptographic
+            artifact linking every token to the specification author's
+            public key at
+            <tt>https://ipp.khsovereign.com/keys/founding_public.pem</tt>.
+            Self-hosted IPP deployments are cryptographically bound to
+            this third-party key. HDP tokens carry no genesis seal and no
+            spec-level attribution; any organization can issue and verify
+            HDP tokens without anchoring to a third party.
+          </li>
+          <li>
+            <strong>Identity model.</strong>
+            IPP mandates W3C DID Core-conformant principal identifiers.
+            HDP supports <tt>id_type: "opaque"</tt> as a first-class
+            option, making DID infrastructure optional rather than
+            required.
+          </li>
+        </ol>
+        <t>
+          These are design choices, not defects. Deployments with reliable
+          connectivity to a central registry, existing DID infrastructure,
+          and a requirement for mid-chain revocation may prefer IPP.
+          Deployments that prioritize offline operability, self-sovereignty,
+          and minimal infrastructure may prefer HDP.
+        </t>
+      </section>
+
+      <section anchor="comparison-rfc8693" numbered="true" toc="default">
+        <name>OAuth 2.0 Token Exchange (RFC 8693)</name>
+        <t>
+          OAuth 2.0 Token Exchange <xref target="RFC8693"/> defines a
+          mechanism for exchanging one security token for another,
+          including delegation and impersonation use cases. HDP and
+          RFC 8693 are complementary rather than competing: RFC 8693
+          governs access token issuance and delegation in an OAuth 2.0
+          authorization server context, while HDP governs the
+          provenance record that travels with an agentic task regardless
+          of the authentication mechanism used.
+        </t>
+        <t>
+          HDP tokens do not replace OAuth access tokens. An agent
+          framework MAY use OAuth 2.0 for resource authorization and
+          HDP for delegation provenance simultaneously.
+        </t>
+      </section>
+
+      <section anchor="comparison-jwt" numbered="true" toc="default">
+        <name>JSON Web Token (RFC 7519)</name>
+        <t>
+          JSON Web Token <xref target="RFC7519"/> provides a general-purpose
+          signed claims format. HDP differs from JWT in three respects:
+        </t>
+        <ul spacing="normal">
+          <li>HDP tokens carry an append-only, multi-party-signed
+          delegation chain (<tt>chain</tt>) that has no equivalent in the
+          JWT standard claims set.</li>
+          <li>HDP uses RFC 8785 canonical JSON for signing payloads,
+          rather than the base64url-encoded header.payload convention
+          used by JWS (RFC 7515). This allows direct JSON manipulation
+          without base64 decoding.</li>
+          <li>HDP's verification pipeline is domain-specific to agentic
+          delegation (session binding, hop verification, max_hops) rather
+          than general-purpose.</li>
+        </ul>
+      </section>
+
+      <section anchor="comparison-ucan" numbered="true" toc="default">
+        <name>UCAN (User Controlled Authorization Networks)</name>
+        <t>
+          UCAN defines a capability-based authorization token system
+          using JWT with chained delegation. HDP and UCAN share the
+          concept of delegation chains but differ significantly in scope:
+          UCAN is a general capability authorization system, while HDP is
+          specifically a provenance record for human-authorized agentic
+          tasks. HDP makes no claims about capability enforcement;
+          UCAN tokens carry executable capabilities that are enforced by
+          receiving systems.
+        </t>
+      </section>
+    </section>
+
+  </middle>
+
+  <back>
+
+    <references>
+      <name>References</name>
+
+      <references>
+        <name>Normative References</name>
+
+        <reference anchor="RFC2119">
+          <front>
+            <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+            <author initials="S." surname="Bradner" fullname="Scott Bradner">
+              <organization>Harvard University</organization>
+            </author>
+            <date year="1997" month="March"/>
+          </front>
+          <seriesInfo name="BCP" value="14"/>
+          <seriesInfo name="RFC" value="2119"/>
+          <seriesInfo name="DOI" value="10.17487/RFC2119"/>
+        </reference>
+
+        <reference anchor="RFC8174">
+          <front>
+            <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+            <author initials="B." surname="Leiba" fullname="Barry Leiba">
+              <organization>Huawei Technologies</organization>
+            </author>
+            <date year="2017" month="May"/>
+          </front>
+          <seriesInfo name="BCP" value="14"/>
+          <seriesInfo name="RFC" value="8174"/>
+          <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+        </reference>
+
+        <reference anchor="RFC8032">
+          <front>
+            <title>Edwards-Curve Digital Signature Algorithm (EdDSA)</title>
+            <author initials="S." surname="Josefsson" fullname="Simon Josefsson"/>
+            <author initials="I." surname="Liusvaara" fullname="Ilari Liusvaara"/>
+            <date year="2017" month="January"/>
+          </front>
+          <seriesInfo name="RFC" value="8032"/>
+          <seriesInfo name="DOI" value="10.17487/RFC8032"/>
+        </reference>
+
+        <reference anchor="RFC8785">
+          <front>
+            <title>JSON Canonicalization Scheme (JCS)</title>
+            <author initials="A." surname="Rundgren" fullname="Anders Rundgren"/>
+            <author initials="B." surname="Jordan" fullname="Bret Jordan"/>
+            <author initials="S." surname="Erdtman" fullname="Samuel Erdtman"/>
+            <date year="2020" month="June"/>
+          </front>
+          <seriesInfo name="RFC" value="8785"/>
+          <seriesInfo name="DOI" value="10.17487/RFC8785"/>
+        </reference>
+
+        <reference anchor="RFC4648">
+          <front>
+            <title>The Base16, Base32, and Base64 Data Encodings</title>
+            <author initials="S." surname="Josefsson" fullname="Simon Josefsson"/>
+            <date year="2006" month="October"/>
+          </front>
+          <seriesInfo name="RFC" value="4648"/>
+          <seriesInfo name="DOI" value="10.17487/RFC4648"/>
+        </reference>
+
+      </references>
+
+      <references>
+        <name>Informative References</name>
+
+        <reference anchor="I-D.haberkamp-ipp">
+          <front>
+            <title>Intent Provenance Protocol (IPP)</title>
+            <author initials="M." surname="Haberkamp" fullname="M. Haberkamp"/>
+            <date year="2024"/>
+          </front>
+          <seriesInfo name="Internet-Draft" value="draft-haberkamp-ipp-00"/>
+          <format type="TXT" target="https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00"/>
+        </reference>
+
+        <reference anchor="RFC8693">
+          <front>
+            <title>OAuth 2.0 Token Exchange</title>
+            <author initials="M." surname="Jones" fullname="Michael Jones"/>
+            <author initials="A." surname="Nadalin" fullname="Anthony Nadalin"/>
+            <author initials="B." surname="Campbell" fullname="Brian Campbell"/>
+            <author initials="J." surname="Bradley" fullname="John Bradley"/>
+            <author initials="C." surname="Liu" fullname="Chuck Liu"/>
+            <date year="2020" month="January"/>
+          </front>
+          <seriesInfo name="RFC" value="8693"/>
+          <seriesInfo name="DOI" value="10.17487/RFC8693"/>
+        </reference>
+
+        <reference anchor="RFC7519">
+          <front>
+            <title>JSON Web Token (JWT)</title>
+            <author initials="M." surname="Jones" fullname="Michael B. Jones"/>
+            <author initials="J." surname="Bradley" fullname="John Bradley"/>
+            <author initials="N." surname="Sakimura" fullname="Nat Sakimura"/>
+            <date year="2015" month="May"/>
+          </front>
+          <seriesInfo name="RFC" value="7519"/>
+          <seriesInfo name="DOI" value="10.17487/RFC7519"/>
+        </reference>
+
+        <reference anchor="W3C.DID">
+          <front>
+            <title>Decentralized Identifiers (DIDs) v1.0</title>
+            <author initials="M." surname="Sporny" fullname="Manu Sporny"/>
+            <author initials="D." surname="Longley" fullname="Dave Longley"/>
+            <author initials="M." surname="Sabadello" fullname="Markus Sabadello"/>
+            <author initials="D." surname="Reed" fullname="Drummond Reed"/>
+            <author initials="O." surname="Steele" fullname="Orie Steele"/>
+            <author initials="C." surname="Allen" fullname="Christopher Allen"/>
+            <date year="2022" month="July"/>
+          </front>
+          <seriesInfo name="W3C Recommendation" value="did-core"/>
+          <format type="HTML" target="https://www.w3.org/TR/did-core/"/>
+        </reference>
+
+        <reference anchor="HDP-SPEC">
+          <front>
+            <title>Human Delegation Provenance Protocol v0.1 Specification</title>
+            <author>
+              <organization>Helixar Limited</organization>
+            </author>
+            <date year="2026"/>
+          </front>
+          <format type="HTML" target="https://helixar.ai/labs/hdp"/>
+        </reference>
+
+        <reference anchor="HDP-IMPL">
+          <front>
+            <title>HDP TypeScript Reference Implementation</title>
+            <author>
+              <organization>Helixar Limited</organization>
+            </author>
+            <date year="2026"/>
+          </front>
+          <format type="HTML" target="https://github.com/Helixar-AI/HDP"/>
+        </reference>
+
+      </references>
+    </references>
+
+    <section anchor="complete-token-example" numbered="true" toc="default">
+      <name>Complete Token Example</name>
+      <t>
+        The following is a complete HDP token with a two-hop delegation
+        chain, for illustrative purposes. Signature values are truncated.
+      </t>
+      <sourcecode type="json"><![CDATA[
+{
+  "hdp": "0.1",
+  "header": {
+    "token_id"   : "550e8400-e29b-41d4-a716-446655440000",
+    "issued_at"  : 1711483200000,
+    "expires_at" : 1711569600000,
+    "session_id" : "sess-20260326-abc123",
+    "version"    : "0.1"
+  },
+  "principal": {
+    "id"           : "usr_alice_opaque",
+    "id_type"      : "opaque",
+    "display_name" : "Alice Chen"
+  },
+  "scope": {
+    "intent"              : "Analyze Q1 sales data and produce a report.",
+    "authorized_tools"    : ["database_read", "file_write"],
+    "data_classification" : "confidential",
+    "network_egress"      : false,
+    "persistence"         : true,
+    "max_hops"            : 3
+  },
+  "chain": [
+    {
+      "seq"            : 1,
+      "agent_id"       : "orchestrator-v2",
+      "agent_type"     : "orchestrator",
+      "timestamp"      : 1711483260000,
+      "action_summary" : "Decompose analysis task; delegate to sub-agents.",
+      "parent_hop"     : 0,
+      "hop_signature"  : "base64url-sig-1..."
+    },
+    {
+      "seq"            : 2,
+      "agent_id"       : "sql-agent-v1",
+      "agent_type"     : "sub-agent",
+      "timestamp"      : 1711483320000,
+      "action_summary" : "Execute read query against sales database.",
+      "parent_hop"     : 1,
+      "hop_signature"  : "base64url-sig-2..."
+    }
+  ],
+  "signature": {
+    "kid"   : "alice-signing-key-v1",
+    "alg"   : "Ed25519",
+    "value" : "base64url-root-sig..."
+  }
+}
+      ]]></sourcecode>
+    </section>
+
+    <section anchor="changelog" numbered="false" toc="default">
+      <name>Change Log</name>
+      <t>
+        This section will be removed before publication as an RFC.
+      </t>
+      <dl spacing="normal" newline="false">
+        <dt>draft-helixar-hdp-agentic-delegation-00:</dt>
+        <dd>Initial submission. Specifies HDP v0.1 token structure,
+        signing, verification pipeline, re-authorization, multi-principal
+        delegation, transport, privacy considerations, and security
+        analysis.</dd>
+      </dl>
+    </section>
+
+  </back>
+</rfc>
