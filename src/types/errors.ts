@@ -19,7 +19,7 @@ export class HdpSignatureInvalidError extends HdpError {
 
 export class HdpChainIntegrityError extends HdpError {
   constructor(detail: string) {
-    super(`Chain integrity failure: ${detail}`, 'CHAIN_INTEGRITY')
+    super(`CHAIN_INTEGRITY: Chain integrity failure: ${detail}`, 'CHAIN_INTEGRITY')
   }
 }
 
@@ -31,7 +31,7 @@ export class HdpSessionMismatchError extends HdpError {
 
 export class HdpMaxHopsExceededError extends HdpError {
   constructor(max: number) {
-    super(`Delegation chain exceeds max_hops limit of ${max}`, 'MAX_HOPS_EXCEEDED')
+    super(`MAX_HOPS_EXCEEDED: Delegation chain exceeds max_hops limit of ${max}`, 'MAX_HOPS_EXCEEDED')
   }
 }
 
