@@ -587,8 +587,8 @@
           MUST cause rejection.
         </li>
         <li>
-          <strong>Hop signature verification.</strong>
-          For each hop at index <tt>i</tt>:
+          <t><strong>Hop signature verification.</strong>
+          For each hop at index <tt>i</tt>:</t>
           <ol spacing="normal" type="a">
             <li>Verify that <tt>hop_signature</tt> is present. Absence
             MUST cause rejection.</li>
