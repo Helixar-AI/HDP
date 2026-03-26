@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@helixar/hdp": "file:../.."
+    "@helixar_ai/hdp": "file:../.."
   },
   "devDependencies": {
     "typescript": "^6.0.2",

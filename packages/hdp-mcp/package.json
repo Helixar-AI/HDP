@@ -1,5 +1,5 @@
 {
-  "name": "@helixar/hdp-mcp",
+  "name": "@helixar_ai/hdp-mcp",
   "version": "0.1.0",
   "description": "HDP middleware for MCP (Model Context Protocol) servers",
   "type": "module",
@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@helixar/hdp": "file:../.."
+    "@helixar_ai/hdp": "file:../.."
   },
   "devDependencies": {
     "typescript": "^6.0.2",

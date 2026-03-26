@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { hdpMiddleware } from '../src/index.js'
-import { generateKeyPair, issueToken, encodeHeader } from '@helixar/hdp'
+import { generateKeyPair, issueToken, encodeHeader } from '@helixar_ai/hdp'
 
 async function makeToken(expiresInMs = 24 * 60 * 60 * 1000) {
   const { privateKey, publicKey } = await generateKeyPair()
