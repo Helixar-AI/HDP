@@ -340,7 +340,7 @@ Test coverage:
 
 ## Spec
 
-Full protocol specification: [https://helixar.ai/labs/hdp](https://helixar.ai/labs/hdp)
+Full protocol specification: [https://helixar.ai/about/labs/hdp/](https://helixar.ai/about/labs/hdp/)
 
 ---
 
