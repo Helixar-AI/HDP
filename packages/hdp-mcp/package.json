@@ -1,6 +1,6 @@
 {
   "name": "@helixar_ai/hdp-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "HDP middleware for MCP (Model Context Protocol) servers",
   "type": "module",
   "main": "dist/index.cjs",
