@@ -25,5 +25,5 @@
     "url": "git+https://github.com/Helixar-AI/HDP.git",
     "directory": "packages/hdp-cli"
   },
-  "license": "ISC"
+  "license": "CC-BY-4.0"
 }
