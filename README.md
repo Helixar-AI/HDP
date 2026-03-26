@@ -8,7 +8,7 @@
 
 <br/>
 
-[![npm version](https://img.shields.io/badge/npm-v0.1.0-0ea5e9?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@helixar_ai/hdp)
+[![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@helixar_ai/hdp)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
