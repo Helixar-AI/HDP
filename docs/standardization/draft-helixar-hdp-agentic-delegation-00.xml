@@ -50,7 +50,7 @@
         Agentic AI systems operate on behalf of human principals, often
         delegating tasks through multi-step chains of AI agents. There is
         currently no standard mechanism to record who authorized an agent to
-        act, under what scope, and through what chain of delegation — in a
+        act, under what scope, and through what chain of delegation  --  in a
         way that can be verified offline, without a central registry, and
         without third-party trust anchors.
       </t>
@@ -96,8 +96,8 @@
           Post-hoc audits cannot reconstruct who approved what, and when.
         </li>
         <li>
-          Prompt injection attacks — where malicious content in the
-          environment instructs an agent to act — cannot be distinguished
+          Prompt injection attacks  --  where malicious content in the
+          environment instructs an agent to act  --  cannot be distinguished
           from legitimate human delegation.
         </li>
       </ul>
@@ -109,8 +109,8 @@
         session binding at issuance.</li>
         <li>Accumulates a cryptographically signed hop record for each
         agent that handles the token.</li>
-        <li>Allows any recipient to verify the entire chain — root
-        signature plus all hop signatures — using only the issuer's
+        <li>Allows any recipient to verify the entire chain  --  root
+        signature plus all hop signatures  --  using only the issuer's
         Ed25519 public key and the session identifier.</li>
       </ul>
 
@@ -126,8 +126,8 @@
           consequence tools.
         </t>
         <t>
-          A provenance token that travels alongside the task — tamper-evident,
-          offline-verifiable, and scoped to what the human actually approved —
+          A provenance token that travels alongside the task  --  tamper-evident,
+          offline-verifiable, and scoped to what the human actually approved  -- 
           provides the foundation for auditable, accountable agentic systems.
         </t>
       </section>
@@ -142,8 +142,8 @@
           <li><strong>Self-sovereignty.</strong> Any organization MUST be able
           to issue and verify HDP tokens without registering with a central
           authority or anchoring to a third-party key.</li>
-          <li><strong>Tamper evidence.</strong> Any modification to a token —
-          in its header, principal, scope, or any hop — MUST be detectable by
+          <li><strong>Tamper evidence.</strong> Any modification to a token  -- 
+          in its header, principal, scope, or any hop  --  MUST be detectable by
           the verification pipeline.</li>
           <li><strong>Minimal footprint.</strong> The protocol MUST be
           implementable in any language with Ed25519 and JSON support. No
@@ -440,7 +440,7 @@
         <name>Root Signature</name>
         <t>
           The root signature is computed by the issuer at token creation
-          time. It covers the token's header, principal, and scope — the
+          time. It covers the token's header, principal, and scope  --  the
           fields that constitute the human authorization event.
         </t>
         <t>The signing procedure is:</t>
@@ -630,7 +630,7 @@
       </t>
 
       <t>
-        Verification is fully offline. Steps 1–7 require only the issuer's
+        Verification is fully offline. Steps 1-7 require only the issuer's
         Ed25519 public key and the current session identifier. No network
         call, registry lookup, or third-party contact is required at
         any step.
@@ -866,7 +866,7 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
         <t>
           HDP is designed to provide provenance and tamper evidence, not
           runtime enforcement. An agent that exceeds its declared scope
-          is still a bad actor — HDP creates an evidence trail, not a
+          is still a bad actor  --  HDP creates an evidence trail, not a
           capability boundary. Applications requiring runtime enforcement
           MUST implement it at the application layer using the HDP token
           as audit input.
@@ -876,8 +876,8 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
       <section anchor="security-forgery" numbered="true" toc="default">
         <name>Token Forgery</name>
         <t>
-          A forged token — one whose <tt>header</tt>, <tt>principal</tt>,
-          or <tt>scope</tt> fields do not match the original issuance — will
+          A forged token  --  one whose <tt>header</tt>, <tt>principal</tt>,
+          or <tt>scope</tt> fields do not match the original issuance  --  will
           fail Step 3 of the verification pipeline (root signature check).
           The security of this step relies on the unforgeability of Ed25519
           signatures and the collision resistance of SHA-512 (used
@@ -890,8 +890,8 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
       <section anchor="security-chain-tampering" numbered="true" toc="default">
         <name>Chain Tampering</name>
         <t>
-          Modification of any hop in <tt>chain</tt> — including removal,
-          reordering, or field modification — will cause hop signature
+          Modification of any hop in <tt>chain</tt>  --  including removal,
+          reordering, or field modification  --  will cause hop signature
           verification (Step 5) to fail for the tampered hop and all
           subsequent hops, because each hop signature covers all previous
           hops. Insertion of a fabricated hop will similarly fail unless
@@ -935,7 +935,7 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
           An HDP-aware agent SHOULD refuse to extend a token's chain with
           an <tt>action_summary</tt> that contradicts the token's
           <tt>scope.intent</tt>. However, the protocol cannot enforce
-          this semantically — the comparison between action intent and
+          this semantically  --  the comparison between action intent and
           token scope is application-defined.
         </t>
         <t>
@@ -1051,7 +1051,7 @@ X-HDP-Token-Ref: 550e8400-e29b-41d4-a716-446655440000
           </li>
           <li>
             <strong>Trust anchor.</strong>
-            IPP tokens contain a <tt>genesis_seal</tt> — a cryptographic
+            IPP tokens contain a <tt>genesis_seal</tt>  --  a cryptographic
             artifact linking every token to the specification author's
             public key at
             <tt>https://ipp.khsovereign.com/keys/founding_public.pem</tt>.
