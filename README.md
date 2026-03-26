@@ -8,7 +8,7 @@
 
 <br/>
 
-[![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&color=0ea5e9&label=npm)](https://www.npmjs.com/package/@helixar_ai/hdp)
+[![npm version](https://img.shields.io/badge/npm-v0.1.0-0ea5e9?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@helixar_ai/hdp)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -108,6 +108,155 @@ const result = await verifyToken(token, {
 
 console.log(result.valid) // true
 console.log(token.chain.length) // 2
+```
+
+---
+
+## Key Management
+
+HDP ships a `KeyRegistry` for `kid → publicKey` resolution and a well-known endpoint format for automated key distribution.
+
+```typescript
+import { KeyRegistry, generateKeyPair, exportPublicKey } from '@helixar_ai/hdp'
+
+const registry = new KeyRegistry()
+
+// Register keys by kid
+const { privateKey, publicKey } = await generateKeyPair()
+registry.register('signing-key-v1', publicKey)
+
+// Resolve a key before verification
+const key = registry.resolve(token.signature.kid) // Uint8Array | null
+
+// Rotate: revoke old, register new
+registry.revoke('signing-key-v1')
+registry.register('signing-key-v2', newPublicKey)
+
+// Export for /.well-known/hdp-keys.json
+const doc = registry.exportWellKnown()
+// → { keys: [{ kid, alg: 'Ed25519', pub: '<base64url>' }] }
+
+// Load from a fetched well-known document
+registry.loadWellKnown(await fetch('/.well-known/hdp-keys.json').then(r => r.json()))
+```
+
+### PKI Guidance
+
+| Environment | Recommended storage |
+|---|---|
+| Development | In-memory `KeyRegistry`, keys generated per-process |
+| Staging | Environment variables via secrets manager |
+| Production | HSM or cloud KMS (AWS KMS, GCP Cloud HSM, Azure Key Vault) |
+| Edge / serverless | Pre-distributed public keys; private key in secure enclave |
+
+**Key rotation protocol:** Issue new tokens with a new `kid` while keeping the old key in the verifier registry until all tokens signed with it have expired. Never delete a key while valid tokens signed with it may still be in circulation.
+
+---
+
+## Offline Verification
+
+HDP verification requires **zero network calls**. The complete trust state is:
+
+- The issuer's Ed25519 public key (32 bytes)
+- The current `session_id` (string)
+- The current time (for expiry check)
+
+```typescript
+import { verifyToken } from '@helixar_ai/hdp'
+
+// Works in air-gapped environments, edge runtimes, or any context
+// where network access before every agent action is unacceptable.
+const result = await verifyToken(token, {
+  publicKey,                              // locally held — no fetch
+  currentSessionId: 'sess-20260326-abc', // locally known — no registry
+})
+```
+
+This is architecturally enforced: the 7-step verification pipeline has no I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`) which intercepts all network calls and asserts none are made during verification.
+
+---
+
+## Streaming Sessions & Re-Authorization
+
+Long-running tasks may exhaust `max_hops`, expand their scope, or require fresh human confirmation mid-session. Issue a re-authorization token rather than modifying the original.
+
+```typescript
+import { issueReAuthToken, verifyToken } from '@helixar_ai/hdp'
+
+// Original token is at max_hops — extend the session
+const reAuth = await issueReAuthToken({
+  original: exhaustedToken,
+  scope: {
+    ...exhaustedToken.scope,
+    intent: 'Continue analysis: generate charts from extracted data.',
+    max_hops: 3,  // fresh hop budget
+  },
+  signingKey: privateKey,
+  keyId: 'signing-key-v1',
+})
+
+// reAuth.header.parent_token_id === exhaustedToken.header.token_id
+// parent linkage is covered by the new root signature
+```
+
+**Token lifetime guidance:**
+
+| Session type | Recommended `expiresInMs` |
+|---|---|
+| Short interactive task | 15–60 minutes |
+| Background batch job | 4–8 hours |
+| Default | 24 hours |
+| High-risk / elevated scope | 5–15 minutes |
+
+Re-authorize when: `max_hops` is reached, scope needs to expand, a high-risk action requires fresh approval, or the token is approaching expiry. Each re-authorization is a distinct human authorization event with a full audit trail via `parent_token_id` chaining.
+
+---
+
+## Multi-Principal Delegation
+
+For actions requiring joint authorization by multiple humans, chain tokens sequentially — each human issues a token pointing to the previous one.
+
+```typescript
+import { issueToken, issueReAuthToken, verifyPrincipalChain } from '@helixar_ai/hdp'
+
+// Human A authorizes
+const t1 = await issueToken({
+  sessionId: 'sess-joint-approval',
+  principal: { id: 'alice', id_type: 'opaque', display_name: 'Alice' },
+  scope: { intent: 'Deploy to production', data_classification: 'restricted',
+           network_egress: true, persistence: true },
+  signingKey: alicePrivateKey, keyId: 'alice-key',
+})
+
+// Human B co-authorizes, linking to T1
+const t2 = await issueReAuthToken({
+  original: t1,
+  principal: { id: 'bob', id_type: 'opaque', display_name: 'Bob' },
+  signingKey: bobPrivateKey, keyId: 'bob-key',
+})
+
+// Verify the full joint authorization chain
+const result = await verifyPrincipalChain(
+  [
+    { token: t1, publicKey: alicePublicKey },
+    { token: t2, publicKey: bobPublicKey },
+  ],
+  { currentSessionId: 'sess-joint-approval' }
+)
+// result.valid === true
+// result.results[0].valid === true (Alice's token)
+// result.results[1].valid === true (Bob's token)
+// t2.header.parent_token_id === t1.header.token_id ✓
+```
+
+`verifyPrincipalChain` verifies: each token's root and hop signatures, `parent_token_id` linkage, shared `session_id` across the chain, and expiry for each token.
+
+**HDP v0.2 preview — `CoAuthorizationRequest`:** Simultaneous multi-signature using a threshold scheme (FROST / Schnorr multisig) is planned for v0.2. The `CoAuthorizationRequest` type is exported today as a preview:
+
+```typescript
+import type { CoAuthorizationRequest } from '@helixar_ai/hdp'
+// { co_principals: [...], threshold: 2, co_signatures: [...] }
+// Not yet implemented in the signing pipeline.
 ```
 
 ---
