@@ -27,7 +27,7 @@ export function buildAuditSafe(token: HdpToken): AuditSafeToken {
  * remove personal identifiers (GDPR Article 17 partial erasure).
  */
 export function redactPii(token: HdpToken): HdpToken {
-  const { display_name: _, poh_credential: __, ...restPrincipal } = token.principal
+  const { display_name: _, ...restPrincipal } = token.principal
   return {
     ...token,
     principal: {
