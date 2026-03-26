@@ -21,7 +21,7 @@ export async function signRoot(
     alg: 'Ed25519',
     kid,
     value: Buffer.from(sigBytes).toString('base64url'),
-    signed_fields: ['header', 'principal', 'scope'],
+    signed_fields: ['header', 'principal', 'scope'] as const,
   }
 }
 

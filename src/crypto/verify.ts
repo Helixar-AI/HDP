@@ -8,7 +8,7 @@ import type { HopRecord } from '../types/chain.js'
 ed.hashes.sha512 = sha512
 
 export async function verifyRoot(
-  token: Omit<UnsignedToken, 'chain'>,
+  token: Record<string, unknown>,
   signature: HdpSignature,
   publicKey: Uint8Array
 ): Promise<boolean> {
