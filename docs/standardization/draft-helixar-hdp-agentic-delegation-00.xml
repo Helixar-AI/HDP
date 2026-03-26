@@ -630,7 +630,7 @@
       </t>
 
       <t>
-        Verification is fully offline. Steps 1-7 require only the issuer's
+        Verification is fully offline. Steps 1 through 7 require only the issuer's
         Ed25519 public key and the current session identifier. No network
         call, registry lookup, or third-party contact is required at
         any step.
