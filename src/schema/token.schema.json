@@ -58,7 +58,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["seq", "agent_id", "agent_type", "timestamp", "action_summary", "parent_hop"],
+        "required": ["seq", "agent_id", "agent_type", "timestamp", "action_summary", "parent_hop", "hop_signature"],
         "properties": {
           "seq": { "type": "integer", "minimum": 1 },
           "agent_id": { "type": "string" },
