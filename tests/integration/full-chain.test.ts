@@ -70,13 +70,14 @@ describe('Full Delegation Chain: Principal → Orchestrator → Sub-agent → To
     let token = await issueToken({
       sessionId: 's1',
       principal: { id: 'u', id_type: 'opaque' },
-      scope: { intent: 'x', data_classification: 'public', network_egress: false, persistence: false, max_hops: 2 },
+      scope: { intent: 'x', data_classification: 'public', network_egress: false, persistence: false, max_hops: 3 },
       signingKey: privateKey, keyId: 'k1',
     })
     token = await extendChain(token, { agent_id: 'a1', agent_type: 'orchestrator', action_summary: 'h1', parent_hop: 0 }, privateKey)
     token = await extendChain(token, { agent_id: 'a2', agent_type: 'sub-agent', action_summary: 'h2', parent_hop: 1 }, privateKey)
+    token = await extendChain(token, { agent_id: 'a3', agent_type: 'tool-executor', action_summary: 'h3', parent_hop: 2 }, privateKey)
     await expect(
-      extendChain(token, { agent_id: 'a3', agent_type: 'sub-agent', action_summary: 'h3', parent_hop: 2 }, privateKey)
+      extendChain(token, { agent_id: 'a4', agent_type: 'sub-agent', action_summary: 'h4', parent_hop: 3 }, privateKey)
     ).rejects.toThrow('MAX_HOPS_EXCEEDED')
   })
 })
