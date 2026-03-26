@@ -13,7 +13,7 @@
  */
 
 import { readFileSync } from 'fs'
-import { validateToken, HdpError } from '@helixar/hdp'
+import { validateToken, HdpError } from '@helixar_ai/hdp'
 
 function printUsage() {
   console.error('Usage: hdp-validate <token.json>')
@@ -21,7 +21,7 @@ function printUsage() {
   console.error('')
   console.error('Validates the schema and structure of an HDP token.')
   console.error('Note: cryptographic signature verification requires a public key.')
-  console.error('      Use the @helixar/hdp TypeScript library for full verification.')
+  console.error('      Use the @helixar_ai/hdp TypeScript library for full verification.')
 }
 
 function readInput(args: string[]): string {
@@ -124,7 +124,7 @@ async function main() {
   console.log(`  chain hops:  ${chain.length}`)
   console.log(``)
   console.log(`  Note: cryptographic signature not verified (requires public key).`)
-  console.log(`  Use @helixar/hdp for full verification including Ed25519 signature check.`)
+  console.log(`  Use @helixar_ai/hdp for full verification including Ed25519 signature check.`)
 
   process.exit(0)
 }

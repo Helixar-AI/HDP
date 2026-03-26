@@ -1,4 +1,4 @@
-# @helixar/hdp
+# @helixar_ai/hdp
 
 **Human Delegation Provenance Protocol — TypeScript reference implementation.**
 
@@ -19,7 +19,7 @@ HDP verification is fully offline. It requires only a public key and a session I
 ## Install
 
 ```bash
-npm install @helixar/hdp
+npm install @helixar_ai/hdp
 ```
 
 ---
@@ -29,7 +29,7 @@ npm install @helixar/hdp
 Issue a token, extend it through a delegation chain, verify it — under 2 minutes.
 
 ```typescript
-import { generateKeyPair, issueToken, extendChain, verifyToken } from '@helixar/hdp'
+import { generateKeyPair, issueToken, extendChain, verifyToken } from '@helixar_ai/hdp'
 
 // 1. Generate a key pair for the issuer
 const { privateKey, publicKey } = await generateKeyPair()
@@ -87,7 +87,7 @@ console.log(token.chain.length) // 2
 HDP includes GDPR-oriented utilities for handling tokens before logging or MCP transmission:
 
 ```typescript
-import { stripPrincipal, redactPii, buildAuditSafe } from '@helixar/hdp'
+import { stripPrincipal, redactPii, buildAuditSafe } from '@helixar_ai/hdp'
 
 // Remove all principal PII before sending token to an MCP agent
 const safeForTransmission = stripPrincipal(token)
@@ -105,7 +105,7 @@ const auditEntry = buildAuditSafe(token)
 ## Transport Helpers
 
 ```typescript
-import { encodeHeader, decodeHeader, InMemoryTokenStore, storeToken, resolveToken } from '@helixar/hdp'
+import { encodeHeader, decodeHeader, InMemoryTokenStore, storeToken, resolveToken } from '@helixar_ai/hdp'
 
 // HTTP header transport (X-HDP-Token)
 const headerValue = encodeHeader(token)         // base64url JSON

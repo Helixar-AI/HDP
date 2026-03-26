@@ -1,5 +1,5 @@
 /**
- * @helixar/hdp-mcp
+ * @helixar_ai/hdp-mcp
  *
  * HDP middleware for MCP (Model Context Protocol) servers.
  *
@@ -7,8 +7,8 @@
  *   const handler = hdpMiddleware(myToolHandler, { hdp_required: true, onValid: (token) => auditLog(token) })
  *   // handler is a drop-in replacement for myToolHandler
  */
-import { verifyToken, decodeHeader } from '@helixar/hdp'
-import type { HdpToken, VerificationOptions } from '@helixar/hdp'
+import { verifyToken, decodeHeader } from '@helixar_ai/hdp'
+import type { HdpToken, VerificationOptions } from '@helixar_ai/hdp'
 
 export interface HdpMiddlewareOptions {
   /**

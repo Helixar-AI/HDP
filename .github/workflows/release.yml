@@ -28,7 +28,7 @@ jobs:
         run: npm test
 
   publish-hdp:
-    name: Publish @helixar/hdp
+    name: Publish @helixar_ai/hdp
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -50,13 +50,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish @helixar/hdp
+      - name: Publish @helixar_ai/hdp
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-hdp-mcp:
-    name: Publish @helixar/hdp-mcp
+    name: Publish @helixar_ai/hdp-mcp
     needs: test
     runs-on: ubuntu-latest
     permissions:
@@ -75,13 +75,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build @helixar/hdp (dependency)
+      - name: Build @helixar_ai/hdp (dependency)
         run: npm run build
 
-      - name: Build @helixar/hdp-mcp
+      - name: Build @helixar_ai/hdp-mcp
         run: cd packages/hdp-mcp && npm run build
 
-      - name: Publish @helixar/hdp-mcp
+      - name: Publish @helixar_ai/hdp-mcp
         run: cd packages/hdp-mcp && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -106,7 +106,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build @helixar/hdp (dependency)
+      - name: Build @helixar_ai/hdp (dependency)
         run: npm run build
 
       - name: Build hdp-validate CLI

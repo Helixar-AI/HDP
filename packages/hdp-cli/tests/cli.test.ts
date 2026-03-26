@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generateKeyPair, issueToken, extendChain } from '@helixar/hdp'
+import { generateKeyPair, issueToken, extendChain } from '@helixar_ai/hdp'
 import { execSync } from 'child_process'
 import { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
