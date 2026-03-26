@@ -1,0 +1,29 @@
+{
+  "name": "hdp-validate",
+  "version": "0.1.0",
+  "description": "CLI validator for HDP (Human Delegation Provenance Protocol) tokens",
+  "type": "module",
+  "bin": {
+    "hdp-validate": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@helixar/hdp": "file:../.."
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "tsup": "^8.5.1",
+    "vitest": "^4.1.1",
+    "@types/node": "^25.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Helixar-AI/HDP.git",
+    "directory": "packages/hdp-cli"
+  },
+  "license": "ISC"
+}
