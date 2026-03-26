@@ -62,8 +62,11 @@ export async function verifyToken(
     if (!hop.hop_signature) {
       return { valid: false, error: new HdpChainIntegrityError(`hop ${hop.seq} is missing required hop_signature`) }
     }
-    const cumulative = chain.slice(0, i + 1)
-    const hopValid = await verifyHop(cumulative, token.signature.value, hop.hop_signature, opts.publicKey)
+    // Reconstruct what was signed: cumulative chain up to this hop, but WITHOUT hop_signature on the current hop
+    // (extender.ts signs over [...prevSignedHops, unsignedCurrentHop] — unsignedCurrentHop has no hop_signature)
+    const { hop_signature: currentHopSig, ...unsignedCurrentHop } = hop
+    const cumulative = [...chain.slice(0, i), unsignedCurrentHop] as any[]
+    const hopValid = await verifyHop(cumulative, token.signature.value, currentHopSig, opts.publicKey)
     if (!hopValid) {
       return { valid: false, error: new HdpSignatureInvalidError(`hop ${hop.seq} signature verification failed`) }
     }
