@@ -6,6 +6,8 @@
 **A cryptographic chain-of-custody protocol for agentic AI systems.**
 *Every action an agent takes, traceable back to the human who authorized it.*
 
+<img src="docs/assets/hdp.png" alt="HDP banner" width="100%"/>
+
 <br/>
 
 [![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@helixar_ai/hdp)
@@ -19,14 +21,7 @@
 
 <br/>
 
-```
-Human ──signs──▶ Token ──delegates──▶ Agent A ──delegates──▶ Agent B ──delegates──▶ Agent C
-                   │                     │                      │                      │
-                   └── Ed25519 root sig  └── hop sig 1          └── hop sig 2          └── hop sig 3
-                           │                    │                      │                      │
-                           └────────────────────┴──────────────────────┴──────────────────────┘
-                                              verified offline, no registry, no network
-```
+<img src="docs/assets/chain.png" alt="HDP delegation chain" width="100%"/>
 
 </div>
 
