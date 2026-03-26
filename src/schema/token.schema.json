@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://helixar.ai/labs/hdp/schema/0.1/token.json",
+  "title": "HDP Token",
+  "type": "object",
+  "required": ["hdp", "header", "principal", "scope", "chain", "signature"],
+  "properties": {
+    "hdp": { "type": "string", "const": "0.1" },
+    "header": {
+      "type": "object",
+      "required": ["token_id", "issued_at", "expires_at", "session_id", "version"],
+      "properties": {
+        "token_id": { "type": "string", "format": "uuid" },
+        "issued_at": { "type": "integer" },
+        "expires_at": { "type": "integer" },
+        "session_id": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "principal": {
+      "type": "object",
+      "required": ["id", "id_type"],
+      "properties": {
+        "id": { "type": "string" },
+        "id_type": {
+          "type": "string",
+          "enum": ["email", "uuid", "did", "poh", "opaque"]
+        },
+        "poh_credential": { "type": "string" },
+        "display_name": { "type": "string" },
+        "metadata": { "type": "object" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": ["intent", "data_classification", "network_egress", "persistence"],
+      "properties": {
+        "intent": { "type": "string" },
+        "authorized_tools": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "authorized_resources": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "data_classification": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "network_egress": { "type": "boolean" },
+        "persistence": { "type": "boolean" },
+        "max_hops": { "type": "integer", "minimum": 1 },
+        "constraints": { "type": "array" }
+      }
+    },
+    "chain": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seq", "agent_id", "agent_type", "timestamp", "action_summary", "parent_hop", "hop_signature"],
+        "properties": {
+          "seq": { "type": "integer", "minimum": 1 },
+          "agent_id": { "type": "string" },
+          "agent_type": {
+            "type": "string",
+            "enum": ["orchestrator", "sub-agent", "tool-executor", "custom"]
+          },
+          "agent_fingerprint": { "type": "string" },
+          "timestamp": { "type": "integer" },
+          "action_summary": { "type": "string" },
+          "parent_hop": { "type": "integer", "minimum": 0 },
+          "hop_signature": { "type": "string" }
+        }
+      }
+    }
+  }
+}
