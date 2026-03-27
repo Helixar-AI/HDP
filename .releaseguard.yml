@@ -23,7 +23,9 @@ scanning:
   exclude_paths:
     - dashboard/assets  # minified UI bundles — high-entropy strings are false positives
   secrets:
-    enabled: true
+    enabled: false  # built-in no_secrets.rego flags Ed25519 keys and base64 blobs as entropy
+                    # false positives in crypto library bundles — secret scanning is covered
+                    # by GitHub Secret Scanning on the source repo
   metadata:
     enabled: true
     fail_on_source_maps: true
@@ -49,11 +51,9 @@ transforms:
 
 policy:
   fail_on:
-    - severity: critical  # confirmed high-confidence secrets and critical CVEs
+    - severity: critical
   warn_on:
     - severity: high
-    - category: secret    # entropy heuristics (RG-SEC-099) produce false positives
-                          # in crypto libraries — warn but don't block
 
 output:
   reports:
