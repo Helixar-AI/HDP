@@ -1,6 +1,6 @@
 {
   "name": "hdp-validate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI validator for HDP (Human Delegation Provenance Protocol) tokens",
   "type": "module",
   "bin": {
