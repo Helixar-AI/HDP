@@ -1,12 +1,12 @@
-# ReleaseGuard policy for hdp-crewai Python artifacts
+# ReleaseGuard policy for HDP TypeScript packages
 # https://github.com/Helixar-AI/ReleaseGuard
 #
-# Scans the built wheel and sdist before they are published to PyPI.
+# Scans built JS/TS artifacts before they are published to npm.
 # Run locally: releaseguard check ./dist
 version: 2
 
 project:
-  name: hdp-crewai
+  name: hdp
   mode: release
 
 inputs:
@@ -15,7 +15,7 @@ inputs:
 
 sbom:
   enabled: true
-  ecosystems: [python]
+  ecosystems: [npm]
   formats: [cyclonedx]
   enrich_cve: false
 
@@ -24,7 +24,7 @@ scanning:
     enabled: true
   metadata:
     enabled: true
-    fail_on_source_maps: false
+    fail_on_source_maps: true
     fail_on_internal_urls: false
     fail_on_build_paths: false
   unexpected_files:
@@ -41,8 +41,9 @@ scanning:
       - LICENSE
 
 transforms:
-  add_checksums: false  # PyPI rejects non-dist files — checksums are handled by PyPI itself
-  add_manifest: false
+  remove_source_maps: false
+  add_checksums: true
+  add_manifest: true
 
 policy:
   fail_on:
