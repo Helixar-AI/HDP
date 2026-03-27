@@ -11,13 +11,16 @@
 <br/>
 
 [![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@helixar_ai/hdp)
+[![PyPI version](https://img.shields.io/pypi/v/hdp-crewai?style=flat-square&logo=pypi&logoColor=white&color=0ea5e9)](https://pypi.org/project/hdp-crewai/)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Python](https://img.shields.io/badge/Python-%3E%3D3.10-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Tests](https://img.shields.io/github/actions/workflow/status/Helixar-AI/HDP/ci.yml?branch=main&style=flat-square&label=tests&logo=github)](https://github.com/Helixar-AI/HDP/actions)
 [![Offline Verified](https://img.shields.io/badge/verification-fully%20offline-22c55e?style=flat-square)](https://github.com/Helixar-AI/HDP/blob/main/tests/security/offline-verification.test.ts)
 [![Ed25519](https://img.shields.io/badge/crypto-Ed25519-7c3aed?style=flat-square)](https://datatracker.ietf.org/doc/html/rfc8032)
 [![MCP Ready](https://img.shields.io/badge/MCP-middleware%20included-f97316?style=flat-square)](./packages/hdp-mcp)
+[![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
 
 <br/>
 
@@ -41,10 +44,24 @@ HDP verification is fully offline. It requires only a public key and a session I
 
 ---
 
+## Packages
+
+| Package | Registry | Language | Description |
+|---|---|---|---|
+| [`@helixar_ai/hdp`](./src) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp) | TypeScript | Core SDK — issue, extend, verify tokens |
+| [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp) | TypeScript | MCP middleware — attaches HDP to any MCP server |
+| [`hdp-crewai`](./packages/hdp-crewai) | [PyPI](https://pypi.org/project/hdp-crewai/) | Python | CrewAI middleware — attaches HDP to any crew |
+
 ## Install
 
+**TypeScript / Node.js**
 ```bash
 npm install @helixar_ai/hdp
+```
+
+**Python / CrewAI**
+```bash
+pip install hdp-crewai
 ```
 
 ---
@@ -335,6 +352,88 @@ Test coverage:
 - Seq gap / chain poisoning
 - Replay attack (session + expiry)
 - Offline verification guarantee
+
+---
+
+## CrewAI Integration
+
+`hdp-crewai` attaches HDP to any CrewAI crew with a single `middleware.configure(crew)` call. No changes to your agents, tasks, or crew configuration are required.
+
+```python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from crewai import Agent, Crew, Task
+from hdp_crewai import HdpMiddleware, HdpPrincipal, ScopePolicy, verify_chain
+
+private_key = Ed25519PrivateKey.generate()
+
+middleware = HdpMiddleware(
+    signing_key=private_key.private_bytes_raw(),
+    session_id="q1-review-2026",
+    principal=HdpPrincipal(id="analyst@company.com", id_type="email"),
+    scope=ScopePolicy(
+        intent="Analyse Q1 sales data and produce a summary",
+        authorized_tools=["FileReadTool", "CSVAnalysisTool"],
+        max_hops=5,
+    ),
+)
+
+crew = Crew(agents=[...], tasks=[...])
+middleware.configure(crew)  # attach HDP — one line
+crew.kickoff()
+
+# Verify the full delegation chain offline
+result = verify_chain(middleware.export_token(), private_key.public_key())
+print(result.valid, result.hop_count, result.violations)
+```
+
+Five design considerations are addressed out of the box:
+
+| # | Consideration | Behaviour |
+|---|---|---|
+| 1 | **Scope enforcement** | `step_callback` checks every tool call against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
+| 2 | **Delegation depth** | `max_hops` is enforced per run; hops beyond the limit are skipped and warned. |
+| 3 | **Token size / perf** | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt the crew. |
+| 4 | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. |
+| 5 | **Memory integration** | Signed token is persisted to CrewAI's storage directory for retroactive auditing. |
+
+→ [Full CrewAI integration docs](./packages/hdp-crewai/README.md)
+
+---
+
+## Releasing
+
+This monorepo uses **two tag prefixes** to independently release the TypeScript packages to npm and the Python package to PyPI.
+
+### TypeScript packages → npm
+
+Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
+
+```bash
+git tag v0.1.2
+git push origin v0.1.2
+```
+
+Pipeline: `test-node` → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli`
+
+### Python package → PyPI
+
+Publishes `hdp-crewai`:
+
+```bash
+git tag python/v0.1.1
+git push origin python/v0.1.1
+```
+
+Pipeline: `test-python` → `publish-hdp-crewai`
+
+### Releasing both at once
+
+```bash
+git tag v0.1.2 && git tag python/v0.1.1
+git push origin v0.1.2 python/v0.1.1
+```
+
+Both pipelines run in parallel, each gating publish behind its own test job. No publish job runs unless its test gate passes.
 
 ---
 
