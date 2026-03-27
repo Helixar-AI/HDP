@@ -21,6 +21,7 @@
 [![Ed25519](https://img.shields.io/badge/crypto-Ed25519-7c3aed?style=flat-square)](https://datatracker.ietf.org/doc/html/rfc8032)
 [![MCP Ready](https://img.shields.io/badge/MCP-middleware%20included-f97316?style=flat-square)](./packages/hdp-mcp)
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
+[![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 
 <br/>
 
@@ -434,6 +435,23 @@ git push origin v0.1.2 python/v0.1.1
 ```
 
 Both pipelines run in parallel, each gating publish behind its own test job. No publish job runs unless its test gate passes.
+
+### Artifact vetting — ReleaseGuard
+
+Every `hdp-crewai` wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI. The pipeline is:
+
+```
+test-python → vet-hdp-crewai (ReleaseGuard) → publish-hdp-crewai
+```
+
+ReleaseGuard checks for secrets, unexpected files, license compliance, and generates a CycloneDX SBOM. The exact vetted artifact — not a fresh rebuild — is what gets published. If ReleaseGuard fails, the publish job never runs.
+
+To vet locally before tagging:
+```bash
+cd packages/hdp-crewai
+python -m build
+releaseguard check ./dist
+```
 
 ---
 
