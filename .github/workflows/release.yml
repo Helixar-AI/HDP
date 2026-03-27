@@ -52,6 +52,41 @@ jobs:
         working-directory: packages/hdp-crewai
         run: pytest tests/ -v
 
+  vet-hdp-crewai:
+    name: Build & Vet hdp-crewai (ReleaseGuard)
+    needs: test-python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-crewai
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@main
+        with:
+          path: packages/hdp-crewai/dist
+          config: packages/hdp-crewai/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-crewai-dist
+          path: packages/hdp-crewai/dist/
+          retention-days: 1
+
   publish-hdp:
     name: Publish @helixar_ai/hdp
     needs: test-node
@@ -144,7 +179,7 @@ jobs:
 
   publish-hdp-crewai:
     name: Publish hdp-crewai to PyPI
-    needs: test-python
+    needs: vet-hdp-crewai
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -153,21 +188,13 @@ jobs:
       name: pypi
       url: https://pypi.org/project/hdp-crewai/
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
-
-      - name: Install build tools
-        run: pip install build
-
-      - name: Build distribution
-        working-directory: packages/hdp-crewai
-        run: python -m build
+          name: hdp-crewai-dist
+          path: dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: packages/hdp-crewai/dist/
+          packages-dir: dist/
