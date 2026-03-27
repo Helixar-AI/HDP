@@ -59,6 +59,12 @@ jobs:
       - name: Build hdp-cli
         run: cd packages/hdp-cli && npm run build
 
+      - name: Copy LICENSE into dist directories
+        run: |
+          cp LICENSE dist/
+          cp LICENSE packages/hdp-mcp/dist/
+          cp LICENSE packages/hdp-cli/dist/
+
       - name: Vet @helixar_ai/hdp
         uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
         with:

@@ -20,6 +20,8 @@ sbom:
   enrich_cve: false
 
 scanning:
+  exclude_paths:
+    - dashboard/assets  # minified UI bundles — high-entropy strings are false positives
   secrets:
     enabled: true
   metadata:
