@@ -4,11 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+      - 'python/v*'
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +32,7 @@ jobs:
   publish-hdp:
     name: Publish @helixar_ai/hdp
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,6 +61,7 @@ jobs:
   publish-hdp-mcp:
     name: Publish @helixar_ai/hdp-mcp
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -89,6 +93,7 @@ jobs:
   publish-hdp-cli:
     name: Publish hdp-validate CLI
     needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -119,11 +124,11 @@ jobs:
 
   publish-hdp-crewai:
     name: Publish hdp-crewai to PyPI
-    needs: test
+    if: startsWith(github.ref, 'refs/tags/python/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # required for PyPI trusted publishing (OIDC)
+      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/project/hdp-crewai/
