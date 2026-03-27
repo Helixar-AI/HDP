@@ -116,3 +116,39 @@ jobs:
         run: cd packages/hdp-cli && npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-hdp-crewai:
+    name: Publish hdp-crewai to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # required for PyPI trusted publishing (OIDC)
+    environment:
+      name: pypi
+      url: https://pypi.org/project/hdp-crewai/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Run tests
+        working-directory: packages/hdp-crewai
+        run: |
+          pip install -e ".[dev]"
+          pytest tests/ -v
+
+      - name: Build distribution
+        working-directory: packages/hdp-crewai
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/hdp-crewai/dist/
