@@ -60,7 +60,7 @@ jobs:
         run: cd packages/hdp-cli && npm run build
 
       - name: Vet @helixar_ai/hdp
-        uses: Helixar-AI/ReleaseGuard@main
+        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
         with:
           path: dist
           config: .releaseguard.yml
@@ -69,7 +69,7 @@ jobs:
           format: sarif
 
       - name: Vet @helixar_ai/hdp-mcp
-        uses: Helixar-AI/ReleaseGuard@main
+        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
         with:
           path: packages/hdp-mcp/dist
           config: .releaseguard.yml
@@ -78,7 +78,7 @@ jobs:
           format: sarif
 
       - name: Vet hdp-validate CLI
-        uses: Helixar-AI/ReleaseGuard@main
+        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
         with:
           path: packages/hdp-cli/dist
           config: .releaseguard.yml
@@ -248,7 +248,7 @@ jobs:
         run: python -m build
 
       - name: Vet artifacts with ReleaseGuard
-        uses: Helixar-AI/ReleaseGuard@main
+        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
         with:
           path: packages/hdp-crewai/dist
           config: packages/hdp-crewai/.releaseguard.yml
