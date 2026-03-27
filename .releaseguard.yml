@@ -49,10 +49,11 @@ transforms:
 
 policy:
   fail_on:
-    - severity: critical
-    - category: secret
+    - severity: critical  # confirmed high-confidence secrets and critical CVEs
   warn_on:
     - severity: high
+    - category: secret    # entropy heuristics (RG-SEC-099) produce false positives
+                          # in crypto libraries — warn but don't block
 
 output:
   reports:
