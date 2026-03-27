@@ -7,10 +7,10 @@ on:
       - 'python/v*'
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+  test-node:
+    name: Test (Node)
     if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -29,10 +29,29 @@ jobs:
       - name: Run tests
         run: npm test
 
+  test-python:
+    name: Test (Python)
+    if: startsWith(github.ref, 'refs/tags/python/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: packages/hdp-crewai
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-crewai
+        run: pytest tests/ -v
+
   publish-hdp:
     name: Publish @helixar_ai/hdp
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-node
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,8 +79,7 @@ jobs:
 
   publish-hdp-mcp:
     name: Publish @helixar_ai/hdp-mcp
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-node
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,8 +110,7 @@ jobs:
 
   publish-hdp-cli:
     name: Publish hdp-validate CLI
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test-node
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -124,7 +141,7 @@ jobs:
 
   publish-hdp-crewai:
     name: Publish hdp-crewai to PyPI
-    if: startsWith(github.ref, 'refs/tags/python/v')
+    needs: test-python
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,12 +159,6 @@ jobs:
 
       - name: Install build tools
         run: pip install build
-
-      - name: Run tests
-        working-directory: packages/hdp-crewai
-        run: |
-          pip install -e ".[dev]"
-          pytest tests/ -v
 
       - name: Build distribution
         working-directory: packages/hdp-crewai
