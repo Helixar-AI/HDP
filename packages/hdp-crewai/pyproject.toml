@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hdp-crewai"
-version = "0.1.1"
+version = "0.1.2"
 description = "HDP (Human Delegation Provenance) middleware for CrewAI — cryptographic audit trail for multi-agent task delegation"
 readme = "README.md"
 license = { text = "CC-BY-4.0" }
