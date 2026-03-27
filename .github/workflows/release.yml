@@ -66,31 +66,34 @@ jobs:
           cp LICENSE packages/hdp-cli/dist/
 
       - name: Vet @helixar_ai/hdp
-        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
         with:
           path: dist
           config: .releaseguard.yml
           sbom: 'true'
           fix: 'true'
           format: sarif
+          artifact-name: releaseguard-evidence-hdp
 
       - name: Vet @helixar_ai/hdp-mcp
-        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
         with:
           path: packages/hdp-mcp/dist
           config: .releaseguard.yml
           sbom: 'true'
           fix: 'true'
           format: sarif
+          artifact-name: releaseguard-evidence-hdp-mcp
 
       - name: Vet hdp-validate CLI
-        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
         with:
           path: packages/hdp-cli/dist
           config: .releaseguard.yml
           sbom: 'true'
           fix: 'true'
           format: sarif
+          artifact-name: releaseguard-evidence-hdp-cli
 
       - name: Upload vetted hdp dist
         uses: actions/upload-artifact@v4
@@ -254,7 +257,7 @@ jobs:
         run: python -m build
 
       - name: Vet artifacts with ReleaseGuard
-        uses: Helixar-AI/ReleaseGuard@e3b02c8e16d336cb9e8d241176ed225365ad5f19
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
         with:
           path: packages/hdp-crewai/dist
           config: packages/hdp-crewai/.releaseguard.yml
