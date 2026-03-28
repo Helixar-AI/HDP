@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "HDP (Human Delegation Provenance) middleware for Grok / xAI API"
 readme = "README.md"
 license = { text = "CC-BY-4.0" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "cryptography>=42.0.0",
     "jcs>=0.2.1",
