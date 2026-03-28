@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hdp-grok"
+version = "0.1.0"
+description = "HDP (Human Delegation Provenance) middleware for Grok / xAI API"
+readme = "README.md"
+license = { text = "CC-BY-4.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=42.0.0",
+    "jcs>=0.2.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/Helixar-AI/HDP"
+Repository = "https://github.com/Helixar-AI/HDP"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hdp_grok"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
