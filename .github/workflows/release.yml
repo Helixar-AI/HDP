@@ -5,6 +5,7 @@ on:
     tags:
       - 'v*'
       - 'python/v*'
+      - 'python/hdp-grok/v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -287,6 +288,84 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hdp-crewai-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  test-hdp-grok:
+    name: Test hdp-grok
+    if: startsWith(github.ref, 'refs/tags/python/hdp-grok/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: packages/hdp-grok
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-grok
+        run: pytest tests/ -v
+
+  vet-hdp-grok:
+    name: Build & Vet hdp-grok (ReleaseGuard)
+    needs: test-hdp-grok
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-grok
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-grok/dist
+          config: packages/hdp-grok/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-grok
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-grok-dist
+          path: packages/hdp-grok/dist/
+          retention-days: 1
+
+  publish-hdp-grok:
+    name: Publish hdp-grok to PyPI
+    needs: vet-hdp-grok
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-hdp-grok
+      url: https://pypi.org/project/hdp-grok/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-grok-dist
           path: dist/
 
       - name: Publish to PyPI
