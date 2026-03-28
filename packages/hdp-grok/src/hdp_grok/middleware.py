@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import time
 import uuid
 from typing import Optional
@@ -42,7 +43,6 @@ def _resolve_key(signing_key: bytes | str | None) -> bytes:
         return bytes.fromhex(signing_key[2:])
 
     # pure hex string: all hex chars and length matches 32-byte key (64 chars)
-    import re
     if re.fullmatch(r"[0-9a-fA-F]+", signing_key) and len(signing_key) == 64:
         return bytes.fromhex(signing_key)
 
