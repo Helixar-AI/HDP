@@ -1,7 +1,7 @@
 # hdp-grok Design Spec
 
 **Date:** 2026-03-28
-**Status:** Approved (rev 2 — post spec-review fixes)
+**Branch:** feat/hdp-grok
 **Package:** `hdp-grok` → PyPI
 **Tag convention:** `python/hdp-grok/v*`
 
