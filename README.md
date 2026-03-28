@@ -1,17 +1,17 @@
 <div align="center">
 
-# HDP
-### Human Delegation Provenance Protocol
+# HDP — Human Delegation Provenance Protocol
 
 **A cryptographic chain-of-custody protocol for agentic AI systems.**
-*Every action an agent takes, traceable back to the human who authorized it.*
+*Every action an AI agent takes, traceable back to the human who authorized it.*
 
-<img src="docs/assets/hdp.png" alt="HDP banner" width="100%"/>
+<img src="docs/assets/hdp.png" alt="HDP — Human Delegation Provenance Protocol" width="100%"/>
 
 <br/>
 
 [![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@helixar_ai/hdp)
-[![PyPI version](https://img.shields.io/pypi/v/hdp-crewai?style=flat-square&logo=pypi&logoColor=white&color=0ea5e9)](https://pypi.org/project/hdp-crewai/)
+[![PyPI hdp-crewai](https://img.shields.io/pypi/v/hdp-crewai?style=flat-square&logo=pypi&logoColor=white&color=0ea5e9&label=hdp-crewai)](https://pypi.org/project/hdp-crewai/)
+[![PyPI hdp-grok](https://img.shields.io/pypi/v/hdp-grok?style=flat-square&logo=pypi&logoColor=white&color=7c3aed&label=hdp-grok)](https://pypi.org/project/hdp-grok/)
 [![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.10-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -21,37 +21,35 @@
 [![Ed25519](https://img.shields.io/badge/crypto-Ed25519-7c3aed?style=flat-square)](https://datatracker.ietf.org/doc/html/rfc8032)
 [![MCP Ready](https://img.shields.io/badge/MCP-middleware%20included-f97316?style=flat-square)](./packages/hdp-mcp)
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
+[![Grok / xAI](https://img.shields.io/badge/Grok%20%2F%20xAI-integration-000000?style=flat-square)](./packages/hdp-grok)
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 
 <br/>
 
-<img src="docs/assets/chain.png" alt="HDP delegation chain" width="100%"/>
+<img src="docs/assets/chain.png" alt="HDP delegation chain — cryptographic audit trail for AI agents" width="100%"/>
 
 </div>
 
 ---
 
-HDP captures, structures, cryptographically signs, and verifies the human delegation context in agentic AI systems. When a person authorizes an agent to act — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain of custody from the authorizing human to every action taken on their behalf.
+## What is HDP?
 
----
+HDP (Human Delegation Provenance) is an open protocol that captures, structures, cryptographically signs, and verifies the human authorization context in agentic AI systems.
 
-## Why Not IPP?
+When a person authorizes an AI agent to act — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain of custody from the authorizing human to every downstream action. The full delegation trail is encoded in a compact, self-contained token signed with Ed25519 and canonicalized with RFC 8785. Verification is fully offline: it requires only a public key, no central registry, no network call.
 
-The [Intent Provenance Protocol](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00) (draft-haberkamp-ipp-00) solves the same problem with different trade-offs. The critical difference: **IPP requires agents to poll a central revocation registry every 5 seconds**. If the registry is unreachable, agents cannot safely act. Every IPP token is also cryptographically anchored to `ipp.khsovereign.com/keys/founding_public.pem` — making fully self-sovereign deployment impossible.
-
-HDP verification is fully offline. It requires only a public key and a session ID. No registry. No central endpoint. No third-party trust anchor.
-
-→ [Full technical comparison: COMPARISON.md](./COMPARISON.md)
+**Who it is for:** developers building AI agents with Grok/xAI, CrewAI, MCP servers, or any OpenAI-compatible API who need accountability, auditability, and proof of human authorization at every step.
 
 ---
 
 ## Packages
 
-| Package | Registry | Language | Description |
-|---|---|---|---|
-| [`@helixar_ai/hdp`](./src) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp) | TypeScript | Core SDK — issue, extend, verify tokens |
-| [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp) | TypeScript | MCP middleware — attaches HDP to any MCP server |
-| [`hdp-crewai`](./packages/hdp-crewai) | [PyPI](https://pypi.org/project/hdp-crewai/) | Python | CrewAI middleware — attaches HDP to any crew |
+| Package | Registry | Language | Framework | Description |
+|---|---|---|---|---|
+| [`@helixar_ai/hdp`](./src) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp) | TypeScript | Any | Core SDK — issue, extend, verify HDP tokens |
+| [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp) | TypeScript | MCP | MCP middleware — attaches HDP to any MCP server |
+| [`hdp-crewai`](./packages/hdp-crewai) | [PyPI](https://pypi.org/project/hdp-crewai/) | Python | CrewAI | CrewAI middleware — attaches HDP to any crew |
+| [`hdp-grok`](./packages/hdp-grok) | [PyPI](https://pypi.org/project/hdp-grok/) | Python | Grok / xAI | Grok middleware — attaches HDP to any xAI conversation |
 
 ## Install
 
@@ -65,11 +63,16 @@ npm install @helixar_ai/hdp
 pip install hdp-crewai
 ```
 
+**Python / Grok (xAI API)**
+```bash
+pip install hdp-grok
+```
+
 ---
 
-## Quickstart
+## Quickstart — TypeScript
 
-Issue a token, extend it through a delegation chain, verify it — under 2 minutes.
+Issue a root token, extend it through a delegation chain, verify it offline. Under 2 minutes.
 
 ```typescript
 import { generateKeyPair, issueToken, extendChain, verifyToken } from '@helixar_ai/hdp'
@@ -113,246 +116,87 @@ token = await extendChain(token, {
   parent_hop: 1,
 }, privateKey)
 
-// 4. Verify at any point in the chain (fully offline)
+// 4. Verify at any point in the chain — fully offline, no network call
 const result = await verifyToken(token, {
   publicKey,
   currentSessionId: 'sess-20260326-abc123',
 })
 
-console.log(result.valid) // true
-console.log(token.chain.length) // 2
+console.log(result.valid)        // true
+console.log(token.chain.length)  // 2
 ```
 
 ---
 
-## Key Management
+## Grok / xAI Integration
 
-HDP ships a `KeyRegistry` for `kid → publicKey` resolution and a well-known endpoint format for automated key distribution.
+`hdp-grok` attaches HDP to any Grok conversation via three native tool schemas. No changes to your prompts or model configuration are required — Grok calls `hdp_issue_token`, `hdp_extend_chain`, and `hdp_verify_token` as regular tool calls, and `HdpMiddleware` handles everything statelessly behind the scenes.
 
-```typescript
-import { KeyRegistry, generateKeyPair, exportPublicKey } from '@helixar_ai/hdp'
+```python
+import json
+import os
+from openai import OpenAI
+from hdp_grok import HdpMiddleware, get_hdp_tools
 
-const registry = new KeyRegistry()
-
-// Register keys by kid
-const { privateKey, publicKey } = await generateKeyPair()
-registry.register('signing-key-v1', publicKey)
-
-// Resolve a key before verification
-const key = registry.resolve(token.signature.kid) // Uint8Array | null
-
-// Rotate: revoke old, register new
-registry.revoke('signing-key-v1')
-registry.register('signing-key-v2', newPublicKey)
-
-// Export for /.well-known/hdp-keys.json
-const doc = registry.exportWellKnown()
-// → { keys: [{ kid, alg: 'Ed25519', pub: '<base64url>' }] }
-
-// Load from a fetched well-known document
-registry.loadWellKnown(await fetch('/.well-known/hdp-keys.json').then(r => r.json()))
-```
-
-### PKI Guidance
-
-| Environment | Recommended storage |
-|---|---|
-| Development | In-memory `KeyRegistry`, keys generated per-process |
-| Staging | Environment variables via secrets manager |
-| Production | HSM or cloud KMS (AWS KMS, GCP Cloud HSM, Azure Key Vault) |
-| Edge / serverless | Pre-distributed public keys; private key in secure enclave |
-
-**Key rotation protocol:** Issue new tokens with a new `kid` while keeping the old key in the verifier registry until all tokens signed with it have expired. Never delete a key while valid tokens signed with it may still be in circulation.
-
----
-
-## Offline Verification
-
-HDP verification requires **zero network calls**. The complete trust state is:
-
-- The issuer's Ed25519 public key (32 bytes)
-- The current `session_id` (string)
-- The current time (for expiry check)
-
-```typescript
-import { verifyToken } from '@helixar_ai/hdp'
-
-// Works in air-gapped environments, edge runtimes, or any context
-// where network access before every agent action is unacceptable.
-const result = await verifyToken(token, {
-  publicKey,                              // locally held — no fetch
-  currentSessionId: 'sess-20260326-abc', // locally known — no registry
-})
-```
-
-This is architecturally enforced: the 7-step verification pipeline has no I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`) which intercepts all network calls and asserts none are made during verification.
-
----
-
-## Streaming Sessions & Re-Authorization
-
-Long-running tasks may exhaust `max_hops`, expand their scope, or require fresh human confirmation mid-session. Issue a re-authorization token rather than modifying the original.
-
-```typescript
-import { issueReAuthToken, verifyToken } from '@helixar_ai/hdp'
-
-// Original token is at max_hops — extend the session
-const reAuth = await issueReAuthToken({
-  original: exhaustedToken,
-  scope: {
-    ...exhaustedToken.scope,
-    intent: 'Continue analysis: generate charts from extracted data.',
-    max_hops: 3,  // fresh hop budget
-  },
-  signingKey: privateKey,
-  keyId: 'signing-key-v1',
-})
-
-// reAuth.header.parent_token_id === exhaustedToken.header.token_id
-// parent linkage is covered by the new root signature
-```
-
-**Token lifetime guidance:**
-
-| Session type | Recommended `expiresInMs` |
-|---|---|
-| Short interactive task | 15–60 minutes |
-| Background batch job | 4–8 hours |
-| Default | 24 hours |
-| High-risk / elevated scope | 5–15 minutes |
-
-Re-authorize when: `max_hops` is reached, scope needs to expand, a high-risk action requires fresh approval, or the token is approaching expiry. Each re-authorization is a distinct human authorization event with a full audit trail via `parent_token_id` chaining.
-
----
-
-## Multi-Principal Delegation
-
-For actions requiring joint authorization by multiple humans, chain tokens sequentially — each human issues a token pointing to the previous one.
-
-```typescript
-import { issueToken, issueReAuthToken, verifyPrincipalChain } from '@helixar_ai/hdp'
-
-// Human A authorizes
-const t1 = await issueToken({
-  sessionId: 'sess-joint-approval',
-  principal: { id: 'alice', id_type: 'opaque', display_name: 'Alice' },
-  scope: { intent: 'Deploy to production', data_classification: 'restricted',
-           network_egress: true, persistence: true },
-  signingKey: alicePrivateKey, keyId: 'alice-key',
-})
-
-// Human B co-authorizes, linking to T1
-const t2 = await issueReAuthToken({
-  original: t1,
-  principal: { id: 'bob', id_type: 'opaque', display_name: 'Bob' },
-  signingKey: bobPrivateKey, keyId: 'bob-key',
-})
-
-// Verify the full joint authorization chain
-const result = await verifyPrincipalChain(
-  [
-    { token: t1, publicKey: alicePublicKey },
-    { token: t2, publicKey: bobPublicKey },
-  ],
-  { currentSessionId: 'sess-joint-approval' }
+# xAI API — OpenAI-compatible endpoint
+client = OpenAI(
+    api_key=os.environ["XAI_API_KEY"],
+    base_url="https://api.x.ai/v1",
 )
-// result.valid === true
-// result.results[0].valid === true (Alice's token)
-// result.results[1].valid === true (Bob's token)
-// t2.header.parent_token_id === t1.header.token_id ✓
+
+# One middleware instance per conversation
+middleware = HdpMiddleware(
+    signing_key=os.getenv("HDP_SIGNING_KEY"),  # base64url Ed25519 private key
+    principal_id="user@example.com",
+)
+
+messages = [{"role": "user", "content": "Issue an HDP token and delegate to research-agent."}]
+
+while True:
+    response = client.chat.completions.create(
+        model="grok-3",
+        messages=messages,
+        tools=get_hdp_tools(),  # inject the three HDP tool schemas
+    )
+    choice = response.choices[0]
+
+    if choice.finish_reason == "tool_calls":
+        messages.append(choice.message)
+        for tc in choice.message.tool_calls:
+            result = middleware.handle_tool_call(
+                name=tc.function.name,
+                args=json.loads(tc.function.arguments),
+            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": json.dumps(result),
+            })
+    else:
+        print(choice.message.content)
+        break
+
+# Full delegation chain — verifiable offline with the public key
+print(middleware)  # HdpMiddleware(session_id='...', hops=2, valid=True)
 ```
 
-`verifyPrincipalChain` verifies: each token's root and hop signatures, `parent_token_id` linkage, shared `session_id` across the chain, and expiry for each token.
+### Three HDP tools Grok can call
 
-**HDP v0.2 preview — `CoAuthorizationRequest`:** Simultaneous multi-signature using a threshold scheme (FROST / Schnorr multisig) is planned for v0.2. The `CoAuthorizationRequest` type is exported today as a preview:
+| Tool | Required args | What it does |
+|---|---|---|
+| `hdp_issue_token` | — | Signs a root token for the session and principal |
+| `hdp_extend_chain` | `delegatee_id` | Appends a signed delegation hop (e.g. to a sub-agent) |
+| `hdp_verify_token` | `token` | Verifies the full chain using the middleware's public key |
 
-```typescript
-import type { CoAuthorizationRequest } from '@helixar_ai/hdp'
-// { co_principals: [...], threshold: 2, co_signatures: [...] }
-// Not yet implemented in the signing pipeline.
-```
+### What `HdpMiddleware` manages for you
 
----
+- Holds the Ed25519 signing key (bytes, hex, base64url, or `HDP_SIGNING_KEY` env var)
+- Maintains the current token and hop counter for the conversation lifetime
+- Routes all `hdp_*` tool calls via `handle_tool_call(name, args)`
+- Handles both snake_case and camelCase argument names from Grok
+- Raises typed errors: `HdpTokenMissingError`, `HdpTokenExpiredError`, `HdpSigningKeyError`
 
-## Privacy Utilities
-
-HDP includes GDPR-oriented utilities for handling tokens before logging or MCP transmission:
-
-```typescript
-import { stripPrincipal, redactPii, buildAuditSafe } from '@helixar_ai/hdp'
-
-// Remove all principal PII before sending token to an MCP agent
-const safeForTransmission = stripPrincipal(token)
-
-// Anonymize identity fields while preserving token structure
-const anonymized = redactPii(token)
-// → principal.id becomes '[REDACTED]', display_name removed
-
-// Build a safe audit log entry (token_id + intent + chain summary, no PII)
-const auditEntry = buildAuditSafe(token)
-```
-
----
-
-## Transport Helpers
-
-```typescript
-import { encodeHeader, decodeHeader, InMemoryTokenStore, storeToken, resolveToken } from '@helixar_ai/hdp'
-
-// HTTP header transport (X-HDP-Token)
-const headerValue = encodeHeader(token)         // base64url JSON
-const recovered = decodeHeader(headerValue)      // HdpToken
-
-// Token-by-reference (X-HDP-Token-Ref)
-const store = new InMemoryTokenStore()
-const tokenId = await storeToken(store, token)   // returns token_id
-const retrieved = await resolveToken(store, tokenId)
-```
-
----
-
-## Verification Pipeline
-
-`verifyToken()` runs a 7-step pipeline defined in HDP spec §7.3:
-
-1. Version check
-2. Expiry (`expires_at`)
-3. Root signature (Ed25519 over header + principal + scope)
-4. Hop signatures — **mandatory per §6.3 Rule 6** (each hop signs cumulative chain state)
-5. `max_hops` constraint
-6. Session ID binding (replay defense)
-7. Proof-of-Humanity credential (optional, application-supplied callback)
-
-Verification is **fully offline**. No registry lookup. No network call. Requires only the issuer's public key and the current session ID.
-
----
-
-## Scope Boundary
-
-**HDP stops at provenance. It does not enforce.**
-
-HDP records that a human authorized an agent to act, with what scope, through what chain. It does not:
-
-- Prevent an agent from exceeding its declared scope at runtime
-- Enforce `authorized_tools` or `data_classification` constraints
-- Make revocation decisions
-- Provide a central authority
-
-Applications that need runtime enforcement should treat HDP tokens as audit input and implement enforcement at the application layer.
-
----
-
-## Security
-
-HDP v0.1 has been audited against spec §12's 10 threat scenarios. See [docs/security/audit-report-v0.1.md](./docs/security/audit-report-v0.1.md).
-
-Test coverage:
-- Token forgery
-- Chain tampering
-- Prompt injection
-- Seq gap / chain poisoning
-- Replay attack (session + expiry)
-- Offline verification guarantee
+→ [Full Grok integration docs](./packages/hdp-grok/README.md)
 
 ---
 
@@ -379,15 +223,13 @@ middleware = HdpMiddleware(
 )
 
 crew = Crew(agents=[...], tasks=[...])
-middleware.configure(crew)  # attach HDP — one line
+middleware.configure(crew)  # attach HDP — one line, zero crew changes
 crew.kickoff()
 
 # Verify the full delegation chain offline
 result = verify_chain(middleware.export_token(), private_key.public_key())
 print(result.valid, result.hop_count, result.violations)
 ```
-
-Five design considerations are addressed out of the box:
 
 | # | Consideration | Behaviour |
 |---|---|---|
@@ -401,56 +243,211 @@ Five design considerations are addressed out of the box:
 
 ---
 
+## Key Management
+
+HDP ships a `KeyRegistry` for `kid → publicKey` resolution and a well-known endpoint format for automated key distribution.
+
+```typescript
+import { KeyRegistry, generateKeyPair, exportPublicKey } from '@helixar_ai/hdp'
+
+const registry = new KeyRegistry()
+
+const { privateKey, publicKey } = await generateKeyPair()
+registry.register('signing-key-v1', publicKey)
+
+// Resolve a key before verification
+const key = registry.resolve(token.signature.kid)  // Uint8Array | null
+
+// Rotate: revoke old, register new
+registry.revoke('signing-key-v1')
+registry.register('signing-key-v2', newPublicKey)
+
+// Export for /.well-known/hdp-keys.json
+const doc = registry.exportWellKnown()
+// → { keys: [{ kid, alg: 'Ed25519', pub: '<base64url>' }] }
+```
+
+| Environment | Recommended storage |
+|---|---|
+| Development | In-memory `KeyRegistry`, keys generated per-process |
+| Staging | Environment variables via secrets manager |
+| Production | HSM or cloud KMS (AWS KMS, GCP Cloud HSM, Azure Key Vault) |
+| Edge / serverless | Pre-distributed public keys; private key in secure enclave |
+
+**Key rotation:** Issue new tokens with a new `kid` while keeping the old key in the verifier registry until all tokens signed with it have expired.
+
+---
+
+## Offline Verification
+
+HDP verification requires **zero network calls**. The complete trust state is:
+
+- The issuer's Ed25519 public key (32 bytes)
+- The current `session_id` (string)
+- The current time (for expiry check)
+
+```typescript
+import { verifyToken } from '@helixar_ai/hdp'
+
+// Works in air-gapped environments, edge runtimes, or any context
+// where a network call before every agent action is unacceptable.
+const result = await verifyToken(token, {
+  publicKey,                               // locally held — no fetch
+  currentSessionId: 'sess-20260326-abc',  // locally known — no registry
+})
+```
+
+This is architecturally enforced: the 7-step verification pipeline has no I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`) which intercepts all network calls and asserts none are made during verification.
+
+---
+
+## Streaming Sessions & Re-Authorization
+
+Long-running tasks may exhaust `max_hops`, expand their scope, or require fresh human confirmation mid-session. Issue a re-authorization token rather than modifying the original.
+
+```typescript
+import { issueReAuthToken } from '@helixar_ai/hdp'
+
+const reAuth = await issueReAuthToken({
+  original: exhaustedToken,
+  scope: {
+    ...exhaustedToken.scope,
+    intent: 'Continue analysis: generate charts from extracted data.',
+    max_hops: 3,
+  },
+  signingKey: privateKey,
+  keyId: 'signing-key-v1',
+})
+// reAuth.header.parent_token_id === exhaustedToken.header.token_id
+```
+
+| Session type | Recommended `expiresInMs` |
+|---|---|
+| Short interactive task | 15–60 minutes |
+| Background batch job | 4–8 hours |
+| Default | 24 hours |
+| High-risk / elevated scope | 5–15 minutes |
+
+---
+
+## Multi-Principal Delegation
+
+For actions requiring joint authorization by multiple humans, chain tokens sequentially — each human issues a token pointing to the previous one.
+
+```typescript
+import { issueToken, issueReAuthToken, verifyPrincipalChain } from '@helixar_ai/hdp'
+
+const t1 = await issueToken({ /* Alice authorizes */ signingKey: alicePrivateKey, keyId: 'alice-key', ... })
+const t2 = await issueReAuthToken({ original: t1, /* Bob co-authorizes */ signingKey: bobPrivateKey, keyId: 'bob-key', ... })
+
+const result = await verifyPrincipalChain(
+  [{ token: t1, publicKey: alicePublicKey }, { token: t2, publicKey: bobPublicKey }],
+  { currentSessionId: 'sess-joint-approval' }
+)
+// result.valid === true, t2.header.parent_token_id === t1.header.token_id
+```
+
+**HDP v0.2 preview — `CoAuthorizationRequest`:** Simultaneous multi-signature using a threshold scheme (FROST / Schnorr multisig) is planned for v0.2.
+
+---
+
+## Privacy Utilities
+
+```typescript
+import { stripPrincipal, redactPii, buildAuditSafe } from '@helixar_ai/hdp'
+
+const safeForTransmission = stripPrincipal(token)   // remove all principal PII
+const anonymized = redactPii(token)                  // principal.id → '[REDACTED]'
+const auditEntry = buildAuditSafe(token)             // token_id + intent + chain summary
+```
+
+---
+
+## Verification Pipeline
+
+`verifyToken()` runs a 7-step pipeline defined in HDP spec §7.3:
+
+1. Version check
+2. Expiry (`expires_at`)
+3. Root signature (Ed25519 over header + principal + scope)
+4. Hop signatures — mandatory per §6.3 Rule 6 (each hop signs cumulative chain state)
+5. `max_hops` constraint
+6. Session ID binding (replay defense)
+7. Proof-of-Humanity credential (optional, application-supplied callback)
+
+---
+
+## Why Not IPP?
+
+The [Intent Provenance Protocol](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00) (draft-haberkamp-ipp-00) solves the same problem with different trade-offs. The critical difference: **IPP requires agents to poll a central revocation registry every 5 seconds**. If the registry is unreachable, agents cannot safely act. Every IPP token is also cryptographically anchored to `ipp.khsovereign.com/keys/founding_public.pem` — making fully self-sovereign deployment impossible.
+
+HDP verification is fully offline. It requires only a public key and a session ID. No registry. No central endpoint. No third-party trust anchor.
+
+→ [Full technical comparison: COMPARISON.md](./COMPARISON.md)
+
+---
+
+## Scope Boundary
+
+**HDP stops at provenance. It does not enforce.**
+
+HDP records that a human authorized an agent to act, with what scope, through what chain. It does not:
+
+- Prevent an agent from exceeding its declared scope at runtime
+- Enforce `authorized_tools` or `data_classification` constraints at the model layer
+- Make revocation decisions
+- Provide a central authority
+
+Applications that need runtime enforcement should treat HDP tokens as audit input and implement enforcement at the application layer.
+
+---
+
+## Security
+
+HDP v0.1 has been audited against spec §12's 10 threat scenarios. See [docs/security/audit-report-v0.1.md](./docs/security/audit-report-v0.1.md).
+
+Test coverage includes: token forgery, chain tampering, prompt injection, seq gap / chain poisoning, replay attack (session + expiry), and offline verification guarantee.
+
+---
+
 ## Releasing
 
-This monorepo uses **two tag prefixes** to independently release the TypeScript packages to npm and the Python package to PyPI.
+This monorepo uses **three independent tag prefixes** to release packages separately.
 
 ### TypeScript packages → npm
 
 Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
 
 ```bash
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.2 && git push origin v0.1.2
 ```
 
-Pipeline: `test-node` → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli`
+Pipeline: `test-node` → `vet-node` (ReleaseGuard) → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli`
 
-### Python package → PyPI
-
-Publishes `hdp-crewai`:
+### hdp-crewai → PyPI
 
 ```bash
-git tag python/v0.1.1
-git push origin python/v0.1.1
+git tag python/v0.1.1 && git push origin python/v0.1.1
 ```
 
-Pipeline: `test-python` → `publish-hdp-crewai`
+Pipeline: `test-python` → `vet-hdp-crewai` (ReleaseGuard) → `publish-hdp-crewai`
 
-### Releasing both at once
+### hdp-grok → PyPI
 
 ```bash
-git tag v0.1.2 && git tag python/v0.1.1
-git push origin v0.1.2 python/v0.1.1
+git tag python/hdp-grok/v0.1.1 && git push origin python/hdp-grok/v0.1.1
 ```
 
-Both pipelines run in parallel, each gating publish behind its own test job. No publish job runs unless its test gate passes.
+Pipeline: `test-hdp-grok` → `vet-hdp-grok` (ReleaseGuard) → `publish-hdp-grok`
 
 ### Artifact vetting — ReleaseGuard
 
-Every `hdp-crewai` wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI. The pipeline is:
+Every wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI — checking for secrets, unexpected files, license compliance, and generating a CycloneDX SBOM. The exact vetted artifact is what gets published. If ReleaseGuard fails, the publish job never runs.
 
-```
-test-python → vet-hdp-crewai (ReleaseGuard) → publish-hdp-crewai
-```
-
-ReleaseGuard checks for secrets, unexpected files, license compliance, and generates a CycloneDX SBOM. The exact vetted artifact — not a fresh rebuild — is what gets published. If ReleaseGuard fails, the publish job never runs.
-
-To vet locally before tagging:
 ```bash
-cd packages/hdp-crewai
-python -m build
-releaseguard check ./dist
+# Vet locally before tagging
+cd packages/hdp-grok && python -m build && releaseguard check ./dist
+cd packages/hdp-crewai && python -m build && releaseguard check ./dist
 ```
 
 ---
