@@ -22,6 +22,7 @@
 [![MCP Ready](https://img.shields.io/badge/MCP-middleware%20included-f97316?style=flat-square)](./packages/hdp-mcp)
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
 [![Grok / xAI](https://img.shields.io/badge/Grok%20%2F%20xAI-integration-000000?style=flat-square)](./packages/hdp-grok)
+[![AutoGen](https://img.shields.io/badge/AutoGen-integration-10b981?style=flat-square)](./packages/hdp-autogen)
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19332023-blue?style=flat-square)](https://doi.org/10.5281/zenodo.19332023)
 
@@ -51,6 +52,8 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 | [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp) | TypeScript | MCP | MCP middleware — attaches HDP to any MCP server |
 | [`hdp-crewai`](./packages/hdp-crewai) | [PyPI](https://pypi.org/project/hdp-crewai/) | Python | CrewAI | CrewAI middleware — attaches HDP to any crew |
 | [`hdp-grok`](./packages/hdp-grok) | [PyPI](https://pypi.org/project/hdp-grok/) | Python | Grok / xAI | Grok middleware — attaches HDP to any xAI conversation |
+| [`hdp-autogen`](./packages/hdp-autogen) | [PyPI](https://pypi.org/project/hdp-autogen/) | Python | AutoGen | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat |
+| [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows |
 
 ## Install
 
@@ -67,6 +70,11 @@ pip install hdp-crewai
 **Python / Grok (xAI API)**
 ```bash
 pip install hdp-grok
+```
+
+**Python / AutoGen**
+```bash
+pip install hdp-autogen
 ```
 
 ---
@@ -241,6 +249,53 @@ print(result.valid, result.hop_count, result.violations)
 | 5 | **Memory integration** | Signed token is persisted to CrewAI's storage directory for retroactive auditing. |
 
 → [Full CrewAI integration docs](./packages/hdp-crewai/README.md)
+
+---
+
+## AutoGen Integration
+
+`hdp-autogen` attaches HDP to any AutoGen `ConversableAgent` or `GroupChatManager` with a single `middleware.configure(target)` call. Each speaker turn in a GroupChat is recorded as a delegation hop.
+
+```python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from autogen import ConversableAgent, GroupChat, GroupChatManager
+from hdp_autogen import HdpMiddleware, HdpPrincipal, ScopePolicy, verify_chain
+
+private_key = Ed25519PrivateKey.generate()
+
+middleware = HdpMiddleware(
+    signing_key=private_key.private_bytes_raw(),
+    session_id="research-2026-q1",
+    principal=HdpPrincipal(id="researcher@lab.edu", id_type="email"),
+    scope=ScopePolicy(
+        intent="Coordinate research agents to summarise recent papers",
+        authorized_tools=["web_search", "file_reader"],
+        max_hops=10,
+    ),
+)
+
+researcher = ConversableAgent("researcher", ...)
+reviewer = ConversableAgent("reviewer", ...)
+groupchat = GroupChat(agents=[researcher, reviewer], messages=[])
+manager = GroupChatManager(groupchat=groupchat, ...)
+
+middleware.configure(manager)  # hooks all agents + wraps run_chat
+manager.run_chat(messages=[{"role": "user", "content": "Summarise recent LLM papers"}])
+
+# Verify the full delegation chain offline
+result = verify_chain(middleware.export_token(), private_key.public_key())
+print(result.valid, result.hop_count, result.violations)
+```
+
+| # | Consideration | Behaviour |
+|---|---|---|
+| 1 | **Scope enforcement** | Incoming messages are inspected for tool calls against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
+| 2 | **Delegation depth** | `max_hops` is enforced per conversation; hops beyond the limit are skipped and warned. |
+| 3 | **Token size / perf** | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt agents. |
+| 4 | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. |
+| 5 | **GroupChat integration** | `configure()` detects `ConversableAgent` vs `GroupChatManager` and attaches the appropriate hooks automatically. |
+
+→ [Full AutoGen integration docs](./packages/hdp-autogen/README.md)
 
 ---
 
@@ -441,6 +496,14 @@ git tag python/hdp-grok/v0.1.1 && git push origin python/hdp-grok/v0.1.1
 
 Pipeline: `test-hdp-grok` → `vet-hdp-grok` (ReleaseGuard) → `publish-hdp-grok`
 
+### hdp-autogen → PyPI
+
+```bash
+git tag python/hdp-autogen/v0.1.0 && git push origin python/hdp-autogen/v0.1.0
+```
+
+Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-hdp-autogen`
+
 ### Artifact vetting — ReleaseGuard
 
 Every wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI — checking for secrets, unexpected files, license compliance, and generating a CycloneDX SBOM. The exact vetted artifact is what gets published. If ReleaseGuard fails, the publish job never runs.
@@ -449,6 +512,7 @@ Every wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI
 # Vet locally before tagging
 cd packages/hdp-grok && python -m build && releaseguard check ./dist
 cd packages/hdp-crewai && python -m build && releaseguard check ./dist
+cd packages/hdp-autogen && python -m build && releaseguard check ./dist
 ```
 
 ---
