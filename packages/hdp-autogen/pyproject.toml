@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hdp-autogen"
+version = "0.1.0"
+description = "HDP (Human Delegation Provenance) middleware for AutoGen — cryptographic audit trail for multi-agent delegation"
+readme = "README.md"
+license = { text = "CC-BY-4.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "pyautogen>=0.4.0",
+    "cryptography>=42.0.0",
+    "jcs>=0.2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Helixar-AI/HDP"
+Repository = "https://github.com/Helixar-AI/HDP"
+Issues = "https://github.com/microsoft/autogen/discussions/7485"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hdp_autogen"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
