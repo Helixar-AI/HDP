@@ -1,6 +1,6 @@
 {
   "name": "@helixar_ai/hdp-autogen",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "HDP middleware for AutoGen — cryptographic audit trail for multi-agent delegation",
   "type": "module",
   "main": "dist/index.cjs",

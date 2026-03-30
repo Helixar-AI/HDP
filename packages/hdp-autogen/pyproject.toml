@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hdp-autogen"
-version = "0.1.0"
+version = "0.1.2"
 description = "HDP (Human Delegation Provenance) middleware for AutoGen — cryptographic audit trail for multi-agent delegation"
 readme = "README.md"
 license = { text = "CC-BY-4.0" }
