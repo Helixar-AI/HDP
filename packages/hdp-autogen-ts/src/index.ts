@@ -155,24 +155,29 @@ export class HdpAgentWrapper {
    * Each GroupChat speaker selection maps to one hop.
    */
   async onSpeakerTurn(agentId: string, message: string): Promise<void> {
-    if (!this.token) {
-      await this.init()
-    }
+    try {
+      if (!this.token) {
+        await this.init()
+      }
 
-    const maxHops = this.scope.max_hops
-    if (maxHops !== undefined && this.hopCount >= maxHops) {
-      return
-    }
+      const maxHops = this.scope.max_hops
+      if (maxHops !== undefined && this.hopCount >= maxHops) {
+        return
+      }
 
-    this.hopCount++
-    const ext: ChainExtensionRequest = {
-      agent_id: agentId,
-      agent_type: 'sub-agent',
-      action_summary: message.slice(0, 200),
-      parent_hop: this.hopCount - 1,
-    }
+      this.hopCount++
+      const ext: ChainExtensionRequest = {
+        agent_id: agentId,
+        agent_type: 'sub-agent',
+        action_summary: message.slice(0, 200),
+        parent_hop: this.hopCount - 1,
+      }
 
-    this.token = await extendChain(this.token!, ext, this.signingKey)
+      this.token = await extendChain(this.token!, ext, this.signingKey)
+    } catch {
+      // Non-blocking: signing failures are silently absorbed so agent
+      // execution is never halted by HDP instrumentation.
+    }
   }
 
   /**
