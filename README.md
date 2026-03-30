@@ -23,6 +23,7 @@
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
 [![Grok / xAI](https://img.shields.io/badge/Grok%20%2F%20xAI-integration-000000?style=flat-square)](./packages/hdp-grok)
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19332023-blue?style=flat-square)](https://doi.org/10.5281/zenodo.19332023)
 
 <br/>
 
@@ -455,6 +456,14 @@ cd packages/hdp-crewai && python -m build && releaseguard check ./dist
 ## Spec
 
 Full protocol specification: [https://helixar.ai/about/labs/hdp/](https://helixar.ai/about/labs/hdp/)
+
+## Citation
+
+If you use HDP in your research, please cite:
+
+```
+https://doi.org/10.5281/zenodo.19332023
+```
 
 ---
 
