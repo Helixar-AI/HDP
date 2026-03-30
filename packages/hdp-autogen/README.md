@@ -112,6 +112,62 @@ ScopePolicy(
 
 ---
 
+## Error handling
+
+By default, HDP middleware is **non-blocking** — signing or scope-check failures are logged as warnings and the agent continues normally. Violations are recorded in the token's hop metadata for post-hoc audit.
+
+```python
+# Default (non-blocking): violations are logged, agents keep running
+middleware = HdpMiddleware(
+    signing_key=key, session_id="s1",
+    principal=HdpPrincipal(id="alice", id_type="handle"),
+    scope=ScopePolicy(intent="research", authorized_tools=["web_search"]),
+)
+middleware.configure(agent)
+# If the agent calls an unauthorised tool (e.g. "execute_code"),
+# → WARNING is logged, violation attached to the hop record
+# → agent execution is NOT interrupted
+
+# Strict mode: violations raise immediately
+middleware_strict = HdpMiddleware(
+    signing_key=key, session_id="s1",
+    principal=HdpPrincipal(id="alice", id_type="handle"),
+    scope=ScopePolicy(intent="research", authorized_tools=["web_search"]),
+    strict=True,
+)
+middleware_strict.configure(agent)
+# If the agent calls "execute_code" → raises HDPScopeViolationError
+```
+
+After a session, inspect violations via the token:
+
+```python
+token = middleware.export_token()
+for hop in token["delegation_chain"]:
+    if hop.get("violation"):
+        print(f"Hop {hop['seq']}: {hop['violation']}")
+```
+
+---
+
+## Cross-language compatibility
+
+Python and TypeScript HDP tokens use the same wire format (RFC 8785 canonical JSON + Ed25519). A token issued by `hdp-autogen` (Python) can be verified by `@helixar_ai/hdp` (TypeScript) and vice versa — useful in mixed environments where some agents run in Python and others in Node.js.
+
+```python
+# Python: export token
+token_json = middleware.export_token_json()
+# → pass to TypeScript service via API, message queue, etc.
+```
+
+```typescript
+// TypeScript: verify a token issued by Python
+import { verifyChain } from "@helixar_ai/hdp";
+const result = verifyChain(JSON.parse(tokenJson), publicKey);
+```
+
+---
+
 ## Spec
 
 Human Delegation Provenance (HDP) is an IETF draft:
