@@ -282,6 +282,8 @@ jobs:
     name: Test hdp-autogen-ts
     if: startsWith(github.ref, 'refs/tags/node/hdp-autogen/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -304,6 +306,8 @@ jobs:
     name: Build & Vet hdp-autogen-ts (ReleaseGuard)
     needs: test-hdp-autogen-ts
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
