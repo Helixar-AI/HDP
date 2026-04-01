@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "CC-BY-4.0" }
 requires-python = ">=3.10"
 dependencies = [
-    "pyautogen>=0.4.0",
+    "pyautogen~=0.2.0",
     "cryptography>=42.0.0",
     "jcs>=0.2.1",
 ]
