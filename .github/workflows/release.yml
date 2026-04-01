@@ -7,6 +7,7 @@ on:
       - 'python/v*'
       - 'python/hdp-grok/v*'
       - 'python/hdp-autogen/v*'
+      - 'node/hdp-autogen/v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -263,6 +264,110 @@ jobs:
         with:
           name: hdp-dist
           path: dist/
+
+      - name: Download vetted hdp-autogen-ts dist
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-autogen-ts-dist
+          path: packages/hdp-autogen-ts/dist/
+
+      - name: Publish @helixar_ai/hdp-autogen
+        run: cd packages/hdp-autogen-ts && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── hdp-autogen-ts independent pipeline ───────────────────────────────────
+
+  test-hdp-autogen-ts:
+    name: Test hdp-autogen-ts
+    if: startsWith(github.ref, 'refs/tags/node/hdp-autogen/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  vet-hdp-autogen-ts:
+    name: Build & Vet hdp-autogen-ts (ReleaseGuard)
+    needs: test-hdp-autogen-ts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Build hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm run build
+
+      - name: Copy LICENSE into dist directory
+        run: cp LICENSE packages/hdp-autogen-ts/dist/
+
+      - name: Vet @helixar_ai/hdp-autogen
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-autogen-ts/dist
+          config: .releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-autogen-ts
+
+      - name: Upload vetted hdp-autogen-ts dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-autogen-ts-dist
+          path: packages/hdp-autogen-ts/dist/
+          retention-days: 1
+
+  publish-hdp-autogen-ts-standalone:
+    name: Publish @helixar_ai/hdp-autogen (standalone)
+    needs: vet-hdp-autogen-ts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
 
       - name: Download vetted hdp-autogen-ts dist
         uses: actions/download-artifact@v4
