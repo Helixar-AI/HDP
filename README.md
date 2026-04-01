@@ -468,9 +468,9 @@ Test coverage includes: token forgery, chain tampering, prompt injection, seq ga
 
 ## Releasing
 
-This monorepo uses **three independent tag prefixes** to release packages separately.
+This monorepo uses **five independent tag prefixes** to release packages separately.
 
-### TypeScript packages → npm
+### TypeScript core packages → npm
 
 Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
 
@@ -478,7 +478,17 @@ Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
 git tag v0.1.2 && git push origin v0.1.2
 ```
 
-Pipeline: `test-node` → `vet-node` (ReleaseGuard) → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli`
+Pipeline: `test-node` → `vet-node` (ReleaseGuard) → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli` + `publish-hdp-autogen-ts`
+
+### @helixar_ai/hdp-autogen → npm
+
+Publishes only `@helixar_ai/hdp-autogen` (TypeScript AutoGen middleware):
+
+```bash
+git tag node/hdp-autogen/v0.1.2 && git push origin node/hdp-autogen/v0.1.2
+```
+
+Pipeline: `test-hdp-autogen-ts` → `vet-hdp-autogen-ts` (ReleaseGuard) → `publish-hdp-autogen-ts-standalone`
 
 ### hdp-crewai → PyPI
 
@@ -499,20 +509,21 @@ Pipeline: `test-hdp-grok` → `vet-hdp-grok` (ReleaseGuard) → `publish-hdp-gro
 ### hdp-autogen → PyPI
 
 ```bash
-git tag python/hdp-autogen/v0.1.0 && git push origin python/hdp-autogen/v0.1.0
+git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
 ```
 
 Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-hdp-autogen`
 
 ### Artifact vetting — ReleaseGuard
 
-Every wheel and sdist is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI — checking for secrets, unexpected files, license compliance, and generating a CycloneDX SBOM. The exact vetted artifact is what gets published. If ReleaseGuard fails, the publish job never runs.
+Every artifact is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI or npm — checking for secrets, unexpected files, license compliance, and generating a CycloneDX SBOM. The exact vetted artifact is what gets published. If ReleaseGuard fails, the publish job never runs.
 
 ```bash
 # Vet locally before tagging
 cd packages/hdp-grok && python -m build && releaseguard check ./dist
 cd packages/hdp-crewai && python -m build && releaseguard check ./dist
 cd packages/hdp-autogen && python -m build && releaseguard check ./dist
+cd packages/hdp-autogen-ts && npm run build && releaseguard check ./dist
 ```
 
 ---
