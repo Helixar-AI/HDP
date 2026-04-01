@@ -54,6 +54,7 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 | [`hdp-grok`](./packages/hdp-grok) | [PyPI](https://pypi.org/project/hdp-grok/) | Python | Grok / xAI | Grok middleware — attaches HDP to any xAI conversation |
 | [`hdp-autogen`](./packages/hdp-autogen) | [PyPI](https://pypi.org/project/hdp-autogen/) | Python | AutoGen | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat |
 | [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows |
+| [`hdp-langchain`](./packages/hdp-langchain) | [PyPI](https://pypi.org/project/hdp-langchain/) | Python | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
 
 ## Install
 
@@ -75,6 +76,11 @@ pip install hdp-grok
 **Python / AutoGen**
 ```bash
 pip install hdp-autogen
+```
+
+**Python / LangChain**
+```bash
+pip install hdp-langchain
 ```
 
 ---
