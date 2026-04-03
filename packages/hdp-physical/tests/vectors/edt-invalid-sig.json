@@ -1,0 +1,34 @@
+{
+  "_comment": "An EDT with a tampered signature — must always fail verification.",
+  "edt": {
+    "embodiment": {
+      "agent_type": "robot_arm",
+      "platform_id": "aloha_v2",
+      "workspace_scope": "conveyor_zone_A"
+    },
+    "action_scope": {
+      "permitted_actions": ["pick"],
+      "excluded_zones": [],
+      "max_force_n": 45.0,
+      "max_velocity_ms": 0.5
+    },
+    "irreversibility": {
+      "max_class": 1,
+      "class2_requires_confirmation": true,
+      "class3_prohibited": true
+    },
+    "policy_attestation": {
+      "policy_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "training_run_id": "tampered",
+      "sim_validated": false
+    },
+    "delegation_scope": {
+      "allow_fleet_delegation": false,
+      "max_delegation_depth": 1,
+      "sub_agent_whitelist": []
+    }
+  },
+  "kid": "test-key-001",
+  "alg": "Ed25519",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
