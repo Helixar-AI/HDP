@@ -2,7 +2,9 @@
 import { describe, it, expect } from 'vitest'
 import { signEdt } from '../src/edt/signer.js'
 import { verifyEdt } from '../src/edt/verifier.js'
+import { EdtBuilder } from '../src/edt/builder.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
+import { IrreversibilityClass } from '../src/types/edt.js'
 import type { EdtToken } from '../src/types/edt.js'
 
 const SAMPLE_EDT: EdtToken = {
@@ -72,5 +74,24 @@ describe('EDT signing', () => {
       alg: 'Ed25519' as const,
     }
     expect(await verifyEdt(signed, publicKey)).toBe(false)
+  })
+})
+
+describe('EdtBuilder', () => {
+  it('builds a valid EdtToken via fluent API', () => {
+    const edt = new EdtBuilder()
+      .setEmbodiment({ agent_type: 'robot_arm', platform_id: 'aloha_v2', workspace_scope: 'zone_A' })
+      .setActionScope({ permitted_actions: ['pick', 'place'], excluded_zones: [], max_force_n: 45, max_velocity_ms: 0.5 })
+      .setIrreversibility({ max_class: IrreversibilityClass.REVERSIBLE_WITH_EFFORT, class2_requires_confirmation: true, class3_prohibited: true })
+      .setPolicyAttestation({ policy_hash: 'abc123', training_run_id: 'run-1', sim_validated: true })
+      .setDelegationScope({ allow_fleet_delegation: false, max_delegation_depth: 1, sub_agent_whitelist: [] })
+      .build()
+    expect(edt.embodiment.agent_type).toBe('robot_arm')
+    expect(edt.irreversibility.max_class).toBe(1)
+  })
+
+  it('throws if required fields are missing', () => {
+    const builder = new EdtBuilder()
+    expect(() => builder.build()).toThrow('EdtBuilder: embodiment is required')
   })
 })
