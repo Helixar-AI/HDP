@@ -6,3 +6,4 @@ dist/
 docs/superpowers/
 .superpowers/
 .DS_Store
+.worktrees/
