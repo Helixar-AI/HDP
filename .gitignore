@@ -2,7 +2,7 @@ node_modules/
 dist/
 *.js.map
 
-# Claude / AI planning artifacts — brainstorm sessions and working plans excluded
-docs/superpowers/brainstorm/
+# Claude / AI planning artifacts — excluded from repo
+docs/superpowers/
 .superpowers/
 .DS_Store
