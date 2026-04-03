@@ -1,6 +1,12 @@
 node_modules/
 dist/
 *.js.map
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.dist-info/
 
 # Claude / AI planning artifacts — excluded from repo
 docs/superpowers/

@@ -1,0 +1,55 @@
+# ReleaseGuard policy for hdp-physical Python artifacts
+# https://github.com/Helixar-AI/ReleaseGuard
+version: 2
+
+project:
+  name: hdp-physical
+  mode: release
+
+inputs:
+  - path: ./dist
+    type: directory
+
+sbom:
+  enabled: true
+  ecosystems: [python]
+  formats: [cyclonedx]
+  enrich_cve: false
+
+scanning:
+  secrets:
+    enabled: true
+  metadata:
+    enabled: true
+    fail_on_source_maps: false
+    fail_on_internal_urls: false
+    fail_on_build_paths: false
+  unexpected_files:
+    enabled: true
+    deny:
+      - ".env"
+      - "*.bak"
+      - "*.tmp"
+      - "*.key"
+      - "*.pem"
+  licenses:
+    enabled: true
+    require:
+      - LICENSE
+
+transforms:
+  add_checksums: false
+  add_manifest: false
+
+policy:
+  fail_on:
+    - severity: critical
+    - category: secret
+  warn_on:
+    - severity: high
+
+output:
+  reports:
+    - cli
+    - sarif
+  directory: ./.releaseguard
