@@ -53,15 +53,30 @@ _PUBLIC_KEY = _PRIVATE_KEY.public_key()
 # ---------------------------------------------------------------------------
 _EDT_TOKEN: EdtToken = (
     EdtBuilder()
-    .platform("demo-arm-v1")
-    .agent_type("manipulation")
-    .workspace("assembly-cell-4")
-    .max_class(IrreversibilityClass.IRREVERSIBLE_NORMALLY)  # up to Class 2
-    .class3_prohibited(True)
-    .max_force(35.0)
-    .max_velocity(0.4)
-    .allowed_zones(["assembly-cell-4", "conveyor-in", "conveyor-out"])
-    .excluded_zones(["human-workspace", "maintenance-bay"])
+    .set_embodiment(
+        platform_id="demo-arm-v1",
+        agent_type="manipulation",
+        workspace_scope="assembly-cell-4",
+    )
+    .set_action_scope(
+        permitted_actions=["pick", "place", "move", "return"],
+        excluded_zones=["human-workspace", "maintenance-bay"],
+        max_force_n=35.0,
+        max_velocity_ms=0.4,
+    )
+    .set_irreversibility(
+        max_class=IrreversibilityClass.IRREVERSIBLE_NORMALLY,  # up to Class 2
+        class3_prohibited=True,
+    )
+    .set_policy_attestation(
+        policy_hash="sha256-demo-policy-v1",
+        training_run_id="demo-run-001",
+        sim_validated=True,
+    )
+    .set_delegation_scope(
+        allow_fleet_delegation=False,
+        max_delegation_depth=1,
+    )
     .build()
 )
 
@@ -473,7 +488,7 @@ def _edt_json() -> str:
                 "workspace_scope": edt.embodiment.workspace_scope,
             },
             "action_scope": {
-                "allowed_zones": edt.action_scope.allowed_zones,
+                "permitted_actions": edt.action_scope.permitted_actions,
                 "excluded_zones": edt.action_scope.excluded_zones,
                 "max_force_n": edt.action_scope.max_force_n,
                 "max_velocity_ms": edt.action_scope.max_velocity_ms,
