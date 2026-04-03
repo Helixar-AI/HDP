@@ -8,6 +8,7 @@ on:
       - 'python/hdp-grok/v*'
       - 'python/hdp-autogen/v*'
       - 'node/hdp-autogen/v*'
+      - 'node/hdp-physical/v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -616,3 +617,107 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
+  # ── hdp-physical (TypeScript) ─────────────────────────────────────────────
+
+  test-hdp-physical:
+    name: Test hdp-physical
+    if: startsWith(github.ref, 'refs/tags/node/hdp-physical/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  vet-hdp-physical:
+    name: Build & Vet hdp-physical (ReleaseGuard)
+    needs: test-hdp-physical
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
+
+      - name: Build hdp-physical
+        run: cd packages/hdp-physical && npm run build
+
+      - name: Copy LICENSE into dist directory
+        run: cp LICENSE packages/hdp-physical/dist/
+
+      - name: Vet @helixar_ai/hdp-physical
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-physical/dist
+          config: .releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-physical
+
+      - name: Upload vetted hdp-physical dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-physical-dist
+          path: packages/hdp-physical/dist/
+          retention-days: 1
+
+  publish-hdp-physical:
+    name: Publish @helixar_ai/hdp-physical
+    needs: vet-hdp-physical
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
+
+      - name: Download vetted hdp-physical dist
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-physical-dist
+          path: packages/hdp-physical/dist/
+
+      - name: Publish @helixar_ai/hdp-physical
+        run: cd packages/hdp-physical && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

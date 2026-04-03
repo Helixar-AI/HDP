@@ -81,6 +81,33 @@ jobs:
         working-directory: packages/hdp-grok
         run: pytest tests/ -v
 
+  test-hdp-physical:
+    name: Test hdp-physical (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck hdp-physical
+        run: cd packages/hdp-physical && npm run typecheck
+
+      - name: Test hdp-physical
+        run: cd packages/hdp-physical && npm test
+
+      - name: Build hdp-physical
+        run: cd packages/hdp-physical && npm run build
+
   test-hdp-autogen:
     name: Test hdp-autogen (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
