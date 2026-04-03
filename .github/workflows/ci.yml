@@ -81,6 +81,33 @@ jobs:
         working-directory: packages/hdp-grok
         run: pytest tests/ -v
 
+  test-hdp-physical:
+    name: Test hdp-physical (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20', '22']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck hdp-physical
+        run: cd packages/hdp-physical && npm run typecheck
+
+      - name: Test hdp-physical
+        run: cd packages/hdp-physical && npm test
+
+      - name: Build hdp-physical
+        run: cd packages/hdp-physical && npm run build
+
   test-hdp-autogen:
     name: Test hdp-autogen (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -101,4 +128,28 @@ jobs:
 
       - name: Run tests
         working-directory: packages/hdp-autogen
+        run: pytest tests/ -v
+
+  test-hdp-physical-py:
+    name: Test hdp-physical-py (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-physical-py
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-physical-py
         run: pytest tests/ -v
