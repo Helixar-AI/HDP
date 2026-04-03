@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { signEdt } from '../src/edt/signer.js'
 import { verifyEdt } from '../src/edt/verifier.js'
 import { EdtBuilder } from '../src/edt/builder.js'
+import { edtToHdpExtension, edtFromHdpExtension } from '../src/edt/bridge.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
 import { IrreversibilityClass } from '../src/types/edt.js'
 import type { EdtToken } from '../src/types/edt.js'
@@ -93,5 +94,32 @@ describe('EdtBuilder', () => {
   it('throws if required fields are missing', () => {
     const builder = new EdtBuilder()
     expect(() => builder.build()).toThrow('EdtBuilder: embodiment is required')
+  })
+})
+
+describe('edtToHdpExtension', () => {
+  it('wraps a SignedEdt into an hdp-p extensions object', async () => {
+    const { privateKey } = await generateKeyPair()
+    const signed = await signEdt(SAMPLE_EDT, privateKey, 'test-kid')
+    const ext = edtToHdpExtension(signed)
+    expect(ext['hdp-p']).toBeDefined()
+    expect((ext['hdp-p'] as Record<string, unknown>).edt).toEqual(SAMPLE_EDT)
+    expect((ext['hdp-p'] as Record<string, unknown>).signature).toBe(signed.signature)
+  })
+
+  it('round-trips through edtFromHdpExtension', async () => {
+    const { privateKey } = await generateKeyPair()
+    const signed = await signEdt(SAMPLE_EDT, privateKey, 'test-kid')
+    const ext = edtToHdpExtension(signed)
+    const recovered = edtFromHdpExtension(ext)
+    expect(recovered).not.toBeNull()
+    expect(recovered!.kid).toBe('test-kid')
+    expect(recovered!.alg).toBe('Ed25519')
+  })
+
+  it('returns null for missing or malformed extensions', () => {
+    expect(edtFromHdpExtension(undefined)).toBeNull()
+    expect(edtFromHdpExtension({})).toBeNull()
+    expect(edtFromHdpExtension({ 'hdp-p': 'not-an-object' })).toBeNull()
   })
 })
