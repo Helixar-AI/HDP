@@ -1,3 +1,2 @@
 hdp-physical>=0.1.0
-gradio>=5.0.0
 cryptography>=42.0.0
