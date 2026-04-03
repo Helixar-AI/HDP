@@ -563,8 +563,8 @@ with gr.Blocks(
         with gr.Column(scale=1):
             diagram_out = gr.Code(
                 label="Delegation Chain (Mermaid)",
-                language=None,
-                lines=18,
+                language="markdown",
+                max_lines=20,
                 interactive=False,
             )
 
