@@ -136,7 +136,9 @@ _guard = PreExecutionGuard()
 
 def _classify_and_guard(action: RobotAction, hdp_enabled: bool) -> dict[str, Any]:
     signed_edt = _get_signed_edt()
-    classification = _classifier.classify(action)
+    # classify() returns ClassificationResult; extract the IrreversibilityClass
+    classification_result = _classifier.classify(action)
+    action_class: IrreversibilityClass = classification_result.action_class
 
     if hdp_enabled:
         decision: AuthorizationDecision = asyncio.run(
@@ -146,8 +148,9 @@ def _classify_and_guard(action: RobotAction, hdp_enabled: bool) -> dict[str, Any
         # Without HDP-P: always approve (simulate no guard)
         decision = AuthorizationDecision(
             approved=True,
-            classification=classification,
+            classification=action_class,
             reason="HDP-P disabled — no safety check performed",
+            edt_valid=True,
             blocked_at=None,
         )
 
@@ -162,7 +165,7 @@ def _classify_and_guard(action: RobotAction, hdp_enabled: bool) -> dict[str, Any
         "zone": action.zone,
         "force_n": action.force_n,
         "velocity_ms": action.velocity_ms,
-        "class": int(classification),
+        "class": int(action_class),
         "approved": decision.approved,
         "blocked_at": decision.blocked_at,
         "reason": decision.reason,
@@ -223,6 +226,7 @@ def run_safe_routine(hdp_enabled: bool):
             approved=last["approved"],
             classification=IrreversibilityClass(last["class"]),
             reason=last["reason"],
+            edt_valid=True,
             blocked_at=last["blocked_at"],
         ),
         action_label="pick-and-place routine",
