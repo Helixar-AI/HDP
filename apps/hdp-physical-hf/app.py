@@ -196,10 +196,11 @@ def _fmt_result(res: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 def run_safe_routine(hdp_enabled: bool):
-    """Execute the 4-step safe pick-and-place routine."""
+    """Execute the 4-step safe pick-and-place routine — streams one step at a time."""
+    import time
+
     results = []
     log_lines = []
-    arm_states = []
 
     for i, action in enumerate(SAFE_ACTIONS):
         res = _classify_and_guard(action, hdp_enabled)
@@ -209,15 +210,22 @@ def run_safe_routine(hdp_enabled: bool):
             f"Step {i+1}: {step_icon} {res['action']} "
             f"[Class {res['class']}{'  — blocked: ' + res['blocked_at'] if not res['approved'] else ''}]"
         )
-        arm_states.append(
-            {
-                "step": i + 1,
-                "approved": res["approved"],
-                "zone": res["zone"],
-                "force_n": res["force_n"],
-                "velocity_ms": res["velocity_ms"],
-            }
+
+        # Yield after each step so the arm animates to each pose individually
+        arm_state_step = json.dumps([{
+            "step": i + 1,
+            "approved": res["approved"],
+            "zone": res["zone"],
+            "force_n": res["force_n"],
+            "velocity_ms": res["velocity_ms"],
+        }])
+        yield (
+            "\n".join(log_lines),
+            f"Step {i+1}/4…",
+            arm_state_step,
+            res["diagram"],
         )
+        time.sleep(1.1)  # hold each pose long enough to see the animation
 
     last = results[-1]
     diagram = generate_mermaid_diagram(
@@ -232,11 +240,10 @@ def run_safe_routine(hdp_enabled: bool):
         action_label="pick-and-place routine",
     )
 
-    log = "\n".join(log_lines)
-    arm_json = json.dumps(arm_states)
     all_approved = all(r["approved"] for r in results)
     status = "✅ All 4 steps approved — routine complete." if all_approved else "⚠️ Some steps were blocked."
-    return log, status, arm_json, diagram
+    # Final yield: last step's arm state stays visible
+    yield "\n".join(log_lines), status, arm_state_step, diagram
 
 
 def inject_attack(hdp_enabled: bool):
@@ -374,12 +381,14 @@ ROBOT_ARM_HTML = """
     ctx.lineTo(gx - perpX*spread + Math.cos(gAngle)*18, gy - perpY*spread + Math.sin(gAngle)*18);
     ctx.stroke();
 
-    // Object on conveyor
-    ctx.fillStyle = '#fbbf24';
-    ctx.fillRect(W*0.62, H*0.72, 28, 20);
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(W*0.62, H*0.72, 28, 20);
+    // Object on conveyor (hidden when carried or placed — overridden by box tracking layer)
+    if (!window._boxCarried) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(W*0.62, H*0.72, 28, 20);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(W*0.62, H*0.72, 28, 20);
+    }
 
     // Labels
     ctx.font = '11px monospace';
@@ -420,59 +429,90 @@ ROBOT_ARM_HTML = """
 
   let currentPose = 3;
 
-  // Listen for state updates from Gradio via a hidden element
-  const observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(m) {
-      const el = document.getElementById('arm-state-data');
-      if (!el) return;
-      try {
-        const states = JSON.parse(el.textContent || '[]');
-        if (!states.length) return;
-        const last = states[states.length - 1];
-        armState.attacking = !!last.attack;
-        armState.blocked = !last.approved;
-        if (last.attack) {
-          if (!last.approved) {
-            // Blocked — stay at home
-            armState.targetShoulder = POSES[3].shoulder;
-            armState.targetElbow = POSES[3].elbow;
-            armState.targetWrist = POSES[3].wrist;
-            armState.targetGripper = POSES[3].gripper;
-            flashEl.style.background = 'rgba(220,38,38,0.18)';
-            setTimeout(function(){ flashEl.style.background = 'rgba(220,38,38,0)'; }, 800);
-          } else {
-            // No guard — arm thrashes
-            armState.targetShoulder = ATTACK_POSE.shoulder;
-            armState.targetElbow = ATTACK_POSE.elbow;
-            armState.targetWrist = ATTACK_POSE.wrist;
-            armState.targetGripper = ATTACK_POSE.gripper;
-            flashEl.style.background = 'rgba(249,115,22,0.22)';
-            setTimeout(function(){ flashEl.style.background = 'rgba(249,115,22,0)'; }, 800);
-          }
-        } else {
-          // Safe routine — step through poses
-          const idx = Math.min(last.step - 1, POSES.length - 1);
-          armState.targetShoulder = POSES[idx].shoulder;
-          armState.targetElbow = POSES[idx].elbow;
-          armState.targetWrist = POSES[idx].wrist;
-          armState.targetGripper = POSES[idx].gripper;
-        }
-        statusEl.textContent = 'Step ' + last.step + ' | Force: ' + last.force_n + ' N | Vel: ' + last.velocity_ms + ' m/s | Zone: ' + last.zone;
-      } catch(e) {}
-    });
-  });
+  // Box state: on conveyor until step 1 grips it, then carried, placed at step 3
+  let boxState = 'conveyor'; // 'conveyor' | 'carried' | 'placed'
+  window._boxCarried = false;
 
-  const container = document.getElementById('robot-container');
-  const dataEl = document.createElement('div');
-  dataEl.id = 'arm-state-data';
-  dataEl.style.display = 'none';
-  container.appendChild(dataEl);
-  observer.observe(dataEl, { childList: true, characterData: true, subtree: true });
+  function applyState(last) {
+    armState.attacking = !!last.attack;
+    armState.blocked = !last.approved;
 
-  // Expose update function for Gradio
+    if (last.attack) {
+      boxState = 'conveyor'; window._boxCarried = false;
+      if (!last.approved) {
+        armState.targetShoulder = POSES[3].shoulder;
+        armState.targetElbow    = POSES[3].elbow;
+        armState.targetWrist    = POSES[3].wrist;
+        armState.targetGripper  = POSES[3].gripper;
+        flashEl.style.background = 'rgba(220,38,38,0.18)';
+        setTimeout(function(){ flashEl.style.background = 'rgba(220,38,38,0)'; }, 800);
+      } else {
+        armState.targetShoulder = ATTACK_POSE.shoulder;
+        armState.targetElbow    = ATTACK_POSE.elbow;
+        armState.targetWrist    = ATTACK_POSE.wrist;
+        armState.targetGripper  = ATTACK_POSE.gripper;
+        flashEl.style.background = 'rgba(249,115,22,0.22)';
+        setTimeout(function(){ flashEl.style.background = 'rgba(249,115,22,0)'; }, 800);
+      }
+    } else {
+      const idx = Math.min((last.step || 1) - 1, POSES.length - 1);
+      armState.targetShoulder = POSES[idx].shoulder;
+      armState.targetElbow    = POSES[idx].elbow;
+      armState.targetWrist    = POSES[idx].wrist;
+      armState.targetGripper  = POSES[idx].gripper;
+      // Box tracking: grip at step 1, carry through step 2, place at step 3
+      if (last.step === 1) { boxState = 'carried'; window._boxCarried = true; }
+      else if (last.step === 3) { boxState = 'placed'; window._boxCarried = true; }
+      else if (last.step === 4) { boxState = 'placed'; window._boxCarried = true; }
+      else { boxState = 'conveyor'; window._boxCarried = false; }
+    }
+    statusEl.textContent = (last.attack ? '⚡ ATTACK' : 'Step ' + last.step) +
+      ' | Force: ' + last.force_n + ' N | Vel: ' + last.velocity_ms + ' m/s | Zone: ' + last.zone;
+  }
+
+  // Override drawArm to include animated box
+  const _origDraw = drawArm;
+  drawArm = function(blocked, attacking) {
+    // Re-run with box drawing appended — patch the box draw after base call
+    _origDraw(blocked, attacking);
+
+    const W = canvas.width, H = canvas.height;
+    const bx = W * 0.35, by = H * 0.82;
+    const s1 = armState.shoulder, s2 = armState.elbow, s3 = armState.wrist;
+
+    // Compute gripper tip position (same math as drawArm)
+    const ex = bx + Math.cos(s1 - Math.PI/2) * 90;
+    const ey = (by-24) + Math.sin(s1 - Math.PI/2) * 90;
+    const wx = ex + Math.cos(s1+s2 - Math.PI/2) * 70;
+    const wy = ey + Math.sin(s1+s2 - Math.PI/2) * 70;
+    const gx = wx + Math.cos(s1+s2+s3 - Math.PI/2) * 50;
+    const gy = wy + Math.sin(s1+s2+s3 - Math.PI/2) * 50;
+
+    if (boxState === 'carried') {
+      // Draw box at gripper tip
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(gx - 12, gy - 8, 24, 16);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(gx - 12, gy - 8, 24, 16);
+    } else if (boxState === 'placed') {
+      // Draw box at assembly cell (near base)
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(bx - 8, by - 52, 24, 16);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 8, by - 52, 24, 16);
+    }
+    // 'conveyor' case is already drawn by the base drawArm (the yellow rect at W*0.62)
+  };
+
+  // Expose update function — called by Gradio js= handler
   window._updateArmState = function(stateJson) {
-    const el = document.getElementById('arm-state-data');
-    if (el) { el.textContent = stateJson; }
+    try {
+      const states = JSON.parse(stateJson || '[]');
+      if (!states.length) return;
+      applyState(states[states.length - 1]);
+    } catch(e) {}
   };
 })();
 </script>
