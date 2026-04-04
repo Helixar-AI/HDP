@@ -43,25 +43,47 @@ from hdp_physical import (
     sign_edt,
 )
 
-# ── Gemma 4 via HF Inference API ─────────────────────────────────────────────
-# Default: google/gemma-4-4b-it on hf-inference (requires accepting license at
-#   huggingface.co/google/gemma-4-4b-it with the account that owns HF_TOKEN).
-# Override via Space env vars if needed:
-#   GEMMA_MODEL    — e.g. google/gemma-4-12b-it
-#   GEMMA_PROVIDER — e.g. featherless-ai
-_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "google/gemma-4-4b-it")
-_GEMMA_PROVIDER = os.environ.get("GEMMA_PROVIDER", "hf-inference")
+# ── Gemma 4 via Google AI Studio ─────────────────────────────────────────────
+# Gemma 4 (E4B) is a multimodal any-to-any model — not on HF serverless.
+# The only public inference path is Google AI Studio (free API key at
+#   aistudio.google.com/apikey). Add key as GOOGLE_API_KEY Space secret.
+#
+# Fallback chain (checked in order):
+#   1. Google AI Studio  — GOOGLE_API_KEY + GEMMA_MODEL (default: gemma-4-e4b-it)
+#   2. HF InferenceClient — HF_TOKEN + featherless-ai + gemma-3-12b-it
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-e4b-it")
+_GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
-_gemma_client   = None
 _GEMMA_AVAILABLE = False
+_GEMMA_BACKEND  = None   # "google" | "hf"
+_gemma_google   = None
+_gemma_hf       = None
 
 try:
-    from huggingface_hub import InferenceClient
-    if _HF_TOKEN:
-        _gemma_client = InferenceClient(provider=_GEMMA_PROVIDER, api_key=_HF_TOKEN)
+    import google.generativeai as genai
+    if _GOOGLE_API_KEY:
+        genai.configure(api_key=_GOOGLE_API_KEY)
+        _gemma_google    = genai.GenerativeModel(_GEMMA_MODEL)
         _GEMMA_AVAILABLE = True
+        _GEMMA_BACKEND   = "google"
 except Exception:
     pass
+
+if not _GEMMA_AVAILABLE:
+    try:
+        from huggingface_hub import InferenceClient
+        if _HF_TOKEN:
+            _gemma_hf        = InferenceClient(provider="featherless-ai", api_key=_HF_TOKEN)
+            _GEMMA_AVAILABLE = True
+            _GEMMA_BACKEND   = "hf"
+    except Exception:
+        pass
+
+_GEMMA_DISPLAY = (
+    f"{_GEMMA_MODEL} via Google AI Studio" if _GEMMA_BACKEND == "google"
+    else "google/gemma-3-12b-it via featherless-ai" if _GEMMA_BACKEND == "hf"
+    else "unavailable"
+)
 
 # ── Async helper (safe in Gradio worker threads) ─────────────────────────────
 def _run_async(coro):
@@ -171,16 +193,23 @@ def _gemma_attack_prompt(src: str, dst: str) -> str:
     return base + poison
 
 def _call_gemma(prompt: str, single: bool = False) -> str:
-    """Send prompt to Gemma 4; return raw text or empty string on failure."""
+    """Send prompt to Gemma; return raw text or empty string on failure."""
     if not _GEMMA_AVAILABLE:
         return ""
     try:
-        result = _gemma_client.chat.completions.create(
-            model=_GEMMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=160 if not single else 100,
-        )
-        return result.choices[0].message.content.strip()
+        if _GEMMA_BACKEND == "google":
+            resp = _gemma_google.generate_content(
+                prompt,
+                generation_config={"max_output_tokens": 300 if not single else 120},
+            )
+            return resp.text.strip()
+        else:
+            result = _gemma_hf.chat.completions.create(
+                model="google/gemma-3-12b-it",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=160 if not single else 100,
+            )
+            return result.choices[0].message.content.strip()
     except Exception as e:
         return f"[Gemma error: {e}]"
 
@@ -624,7 +653,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
         "approved": True, "attack": False,
         "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
     }])
-    gemma_status = f"[AI] **Gemma** (`{_GEMMA_MODEL}`) planning route…"
+    gemma_status = f"[AI] **Gemma 4** (`{_GEMMA_DISPLAY}`) planning route…"
     yield "", f"[AI] Gemma planning: {src} → {dst}", reset_state, "", gemma_status, ""
     # Arm moves to source position while Gemma is computing
     yield "", f"[AI] Arm ready at {src} — waiting for Gemma plan…", reach_state, "", gemma_status, ""
@@ -793,11 +822,11 @@ def _edt_json() -> str:
 # ── UI ────────────────────────────────────────────────────────────────────────
 HEADER = f"""
 # HDP-P Physical Safety Demo
-**Gemma** (`{_GEMMA_MODEL}` via `{_GEMMA_PROVIDER}`) plans every robot action from natural language.
+**Gemma** (`{_GEMMA_DISPLAY}`) plans every robot action from natural language.
 **HDP-P** cryptographically verifies each Gemma action before the arm moves.
 
 > Run the routine → inject an attack → toggle HDP-P to see the difference.
-{"[OK] **Gemma connected** — live inference active." if _GEMMA_AVAILABLE else "[WARN] **Gemma unavailable** — scripted fallback mode (set `HF_TOKEN` Space secret)."}
+{"[OK] **Gemma connected** — live inference active." if _GEMMA_AVAILABLE else "[WARN] **Gemma unavailable** — set `GOOGLE_API_KEY` Space secret (aistudio.google.com/apikey)."}
 """
 
 with gr.Blocks(
@@ -852,7 +881,7 @@ with gr.Blocks(
         User task description
               │
               ▼
-        Gemma ({_GEMMA_MODEL})
+        Gemma ({_GEMMA_DISPLAY})
          ← adversary injects text here to poison Gemma's output
               │  generates: RobotAction(zone, force_n, velocity_ms)
               ▼
