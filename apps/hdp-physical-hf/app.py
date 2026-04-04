@@ -44,36 +44,28 @@ from hdp_physical import (
     sign_edt,
 )
 
-# ── Gemma 4 via Google AI Studio ─────────────────────────────────────────────
-# Gemma 4 (E4B) is a multimodal any-to-any model — not on HF serverless.
-# The only public inference path is Google AI Studio (free API key at
-#   aistudio.google.com/apikey). Add key as GOOGLE_API_KEY Space secret.
+# ── Gemma 4 via Google AI Studio (pure REST — no extra deps) ─────────────────
+# Uses the Gemini REST API directly with `requests` (always available).
+# No google-generativeai package needed — avoids grpcio compile time.
 #
-# Fallback chain (checked in order):
-#   1. Google AI Studio  — GOOGLE_API_KEY + GEMMA_MODEL (default: gemma-4-e4b-it)
-#   2. HF InferenceClient — HF_TOKEN + featherless-ai + gemma-3-12b-it
+# Fallback chain:
+#   1. Google AI Studio REST — GOOGLE_API_KEY
+#   2. HF featherless-ai     — HF_TOKEN + gemma-3-12b-it
+import requests as _requests
+
 _GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _GEMMA_AVAILABLE = False
 _GEMMA_BACKEND  = None   # "google" | "hf"
 _GEMMA_INIT_ERR = ""
-_gemma_google   = None
 _gemma_hf       = None
 
-try:
-    import google.generativeai as genai
-    if _GOOGLE_API_KEY:
-        genai.configure(api_key=_GOOGLE_API_KEY)
-        _gemma_google    = genai.GenerativeModel(_GEMMA_MODEL)
-        _GEMMA_AVAILABLE = True
-        _GEMMA_BACKEND   = "google"
-    else:
-        _GEMMA_INIT_ERR = "GOOGLE_API_KEY not set"
-except Exception as _e:
-    _GEMMA_INIT_ERR = f"google-generativeai error: {_e}"
-
-if not _GEMMA_AVAILABLE:
+if _GOOGLE_API_KEY:
+    _GEMMA_AVAILABLE = True
+    _GEMMA_BACKEND   = "google"
+else:
+    _GEMMA_INIT_ERR  = "GOOGLE_API_KEY not set"
     try:
         from huggingface_hub import InferenceClient
         if _HF_TOKEN:
@@ -205,11 +197,18 @@ def _call_gemma(prompt: str, single: bool = False) -> str:
         return ""
     try:
         if _GEMMA_BACKEND == "google":
-            resp = _gemma_google.generate_content(
-                prompt,
-                generation_config={"max_output_tokens": 300 if not single else 120},
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{_GEMMA_MODEL}:generateContent?key={_GOOGLE_API_KEY}"
             )
-            return resp.text.strip()
+            body = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"maxOutputTokens": 300 if not single else 120},
+            }
+            r = _requests.post(url, json=body, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         else:
             result = _gemma_hf.chat.completions.create(
                 model="google/gemma-3-12b-it",
