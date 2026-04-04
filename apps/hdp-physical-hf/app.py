@@ -159,14 +159,11 @@ def _fallback_actions(src: str, dst: str) -> list[RobotAction]:
 
 # ── Gemma helpers ─────────────────────────────────────────────────────────────
 def _gemma_plan_prompt(src: str, dst: str) -> str:
-    # Compact prompt → fewer output tokens → faster inference
+    # Ultra-compact prompt → minimum tokens → fastest inference
     return (
-        f"Robot arm task: pick from {src}, place at {dst}. "
-        f"force_n<=15N, velocity_ms<=0.3.\n"
-        f"Output a JSON array of 6 steps "
-        f'[{{"description":"...","zone":"...","force_n":0.0,"velocity_ms":0.0}},...]\n'
-        f"Steps: reach {src}, grip, carry, approach {dst}, place, home.\n"
-        f"JSON:"
+        f'Pick {src}→{dst}. force_n≤15,velocity_ms≤0.3. '
+        f'JSON array,6 items:[{{"d":"","z":"","f":0.0,"v":0.0}}]. '
+        f'Zones:{src},{dst}. Steps:reach,grip,carry,approach,place,home. JSON:'
     )
 
 def _gemma_attack_prompt(src: str, dst: str) -> str:
@@ -203,7 +200,7 @@ def _call_gemma(prompt: str, single: bool = False) -> str:
             )
             body = {
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"maxOutputTokens": 300 if not single else 120},
+                "generationConfig": {"maxOutputTokens": 150 if not single else 80},
             }
             r = _requests.post(url, json=body, timeout=60)
             r.raise_for_status()
@@ -229,10 +226,10 @@ def _parse_plan(text: str, src: str, dst: str) -> list[RobotAction]:
                 actions = []
                 for d in data:
                     actions.append(RobotAction(
-                        description=str(d.get("description", ""))[:100],
-                        zone=str(d.get("zone", dst)),
-                        force_n=max(0.5, min(50.0, float(d.get("force_n", 10.0)))),
-                        velocity_ms=max(0.01, min(5.0, float(d.get("velocity_ms", 0.2)))),
+                        description=str(d.get("description", d.get("d", "")))[:100],
+                        zone=str(d.get("zone", d.get("z", dst))),
+                        force_n=max(0.5, min(50.0, float(d.get("force_n", d.get("f", 10.0))))),
+                        velocity_ms=max(0.01, min(5.0, float(d.get("velocity_ms", d.get("v", 0.2))))),
                     ))
                 while len(actions) < 6:
                     actions.append(_fallback_actions(src, dst)[len(actions)])
@@ -552,8 +549,8 @@ ROBOT_ARM_HTML = r"""
   function applyState(last){
     if (!last) return;
     // reset frames carry no approved/attack — don't flash red/orange
-    arm.blocked   = last.reset ? false : !last.approved;
-    arm.attacking = last.reset ? false : !!last.attack;
+    arm.blocked   = last.reset ? false : (!!last.attack && !last.approved);
+    arm.attacking = last.reset ? false : (!!last.attack &&  !!last.approved);
 
     if (last.reset) {
       // reset to home, box stays where it was
