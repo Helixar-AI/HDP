@@ -549,8 +549,8 @@ ROBOT_ARM_HTML = r"""
   function applyState(last){
     if (!last) return;
     // reset frames carry no approved/attack — don't flash red/orange
-    arm.blocked   = last.reset ? false : (!!last.attack && !last.approved);
-    arm.attacking = last.reset ? false : (!!last.attack &&  !!last.approved);
+    arm.blocked   = last.reset ? false : !last.approved;
+    arm.attacking = last.reset ? false : (!!last.attack && !!last.approved);
 
     if (last.reset) {
       // reset to home, box stays where it was
@@ -629,10 +629,14 @@ ROBOT_ARM_HTML = r"""
 
 # ── Gradio callbacks ──────────────────────────────────────────────────────────
 
-def toggle_hdp(enabled: bool) -> str:
+def toggle_hdp(enabled: bool):
     if enabled:
-        return "**[GUARD] HDP-P ON** — PreExecutionGuard verifies every Gemma action."
-    return "**[WARN] HDP-P OFF** — Gemma outputs execute directly, no safety check."
+        label = "[GUARD] HDP-P Protection: ON"
+        md    = "**[GUARD] HDP-P ON** — PreExecutionGuard verifies every Gemma action."
+    else:
+        label = "[WARN]  HDP-P Protection: OFF"
+        md    = "**[WARN] HDP-P OFF** — Gemma outputs execute directly, no safety check."
+    return gr.update(label=label), md
 
 
 def run_safe_routine(hdp_enabled: bool) -> Generator:
@@ -919,7 +923,7 @@ with gr.Blocks(
 
     # ── event wiring ──
 
-    hdp_toggle.change(fn=toggle_hdp, inputs=[hdp_toggle], outputs=[hdp_label])
+    hdp_toggle.change(fn=toggle_hdp, inputs=[hdp_toggle], outputs=[hdp_toggle, hdp_label])
 
     run_btn.click(
         fn=run_safe_routine,
