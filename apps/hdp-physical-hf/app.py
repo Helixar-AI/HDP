@@ -43,17 +43,21 @@ from hdp_physical import (
     sign_edt,
 )
 
-# ── Gemma 4 via HF Inference API ─────────────────────────────────────────────
-# Set GEMMA_MODEL env-var in the Space to override (e.g. google/gemma-4-4b-it).
-_GEMMA_MODEL = os.environ.get("GEMMA_MODEL", "google/gemma-3-4b-it")
-_HF_TOKEN    = os.environ.get("HF_TOKEN")
-_gemma_client = None
+# ── Gemma via HF Inference API ───────────────────────────────────────────────
+# featherless-ai serves Gemma 3/4 without needing model-specific term acceptance.
+# Override via Space env vars:
+#   GEMMA_MODEL    — e.g. google/gemma-4-4b-it  (once that model is ungated)
+#   GEMMA_PROVIDER — e.g. hf-inference
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "google/gemma-3-12b-it")
+_GEMMA_PROVIDER = os.environ.get("GEMMA_PROVIDER", "featherless-ai")
+_HF_TOKEN       = os.environ.get("HF_TOKEN")
+_gemma_client   = None
 _GEMMA_AVAILABLE = False
 
 try:
     from huggingface_hub import InferenceClient
     if _HF_TOKEN:
-        _gemma_client = InferenceClient(provider="hf-inference", api_key=_HF_TOKEN)
+        _gemma_client = InferenceClient(provider=_GEMMA_PROVIDER, api_key=_HF_TOKEN)
         _GEMMA_AVAILABLE = True
 except Exception:
     pass
@@ -162,7 +166,6 @@ def _call_gemma(prompt: str, single: bool = False) -> str:
             model=_GEMMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=400 if not single else 120,
-            timeout=30,
         )
         return result.choices[0].message.content.strip()
     except Exception as e:
@@ -600,7 +603,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
 
     # ── Step 0: ask Gemma ──
     gemma_status = (
-        f"🤖 **Gemma 4** (`{_GEMMA_MODEL}`) planning:\n"
+        f"🤖 **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
         f"> *Pick from **{src}** → place at **{dst}***"
     )
     yield "", f"🤖 Asking Gemma 4 to plan route: {src} → {dst}…", reset_state, "", gemma_status
@@ -753,11 +756,11 @@ def _edt_json() -> str:
 # ── UI ────────────────────────────────────────────────────────────────────────
 HEADER = f"""
 # 🤖 HDP-P Physical Safety Demo
-**Gemma 4** (`{_GEMMA_MODEL}`) plans every robot action from natural language.
+**Gemma** (`{_GEMMA_MODEL}` via `{_GEMMA_PROVIDER}`) plans every robot action from natural language.
 **HDP-P** cryptographically verifies each Gemma action before the arm moves.
 
 > Run the routine → inject an attack → toggle HDP-P to see the difference.
-{"✅ **Gemma 4 connected** — live inference active." if _GEMMA_AVAILABLE else "⚠️ **Gemma unavailable** — scripted fallback mode (set `HF_TOKEN` Space secret)."}
+{"✅ **Gemma connected** — live inference active." if _GEMMA_AVAILABLE else "⚠️ **Gemma unavailable** — scripted fallback mode (set `HF_TOKEN` Space secret)."}
 """
 
 with gr.Blocks(
