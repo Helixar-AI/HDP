@@ -43,13 +43,14 @@ from hdp_physical import (
     sign_edt,
 )
 
-# ── Gemma via HF Inference API ───────────────────────────────────────────────
-# featherless-ai serves Gemma 3/4 without needing model-specific term acceptance.
-# Override via Space env vars:
-#   GEMMA_MODEL    — e.g. google/gemma-4-4b-it  (once that model is ungated)
-#   GEMMA_PROVIDER — e.g. hf-inference
-_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "google/gemma-3-12b-it")
-_GEMMA_PROVIDER = os.environ.get("GEMMA_PROVIDER", "featherless-ai")
+# ── Gemma 4 via HF Inference API ─────────────────────────────────────────────
+# Default: google/gemma-4-4b-it on hf-inference (requires accepting license at
+#   huggingface.co/google/gemma-4-4b-it with the account that owns HF_TOKEN).
+# Override via Space env vars if needed:
+#   GEMMA_MODEL    — e.g. google/gemma-4-12b-it
+#   GEMMA_PROVIDER — e.g. featherless-ai
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "google/gemma-4-4b-it")
+_GEMMA_PROVIDER = os.environ.get("GEMMA_PROVIDER", "hf-inference")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _gemma_client   = None
 _GEMMA_AVAILABLE = False
