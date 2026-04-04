@@ -53,7 +53,7 @@ from hdp_physical import (
 #   2. HF featherless-ai     — HF_TOKEN + gemma-3-12b-it
 import requests as _requests
 
-_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-27b-a4b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _GEMMA_AVAILABLE = False
