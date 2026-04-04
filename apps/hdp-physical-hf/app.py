@@ -56,6 +56,7 @@ _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _GEMMA_AVAILABLE = False
 _GEMMA_BACKEND  = None   # "google" | "hf"
+_GEMMA_INIT_ERR = ""
 _gemma_google   = None
 _gemma_hf       = None
 
@@ -66,8 +67,10 @@ try:
         _gemma_google    = genai.GenerativeModel(_GEMMA_MODEL)
         _GEMMA_AVAILABLE = True
         _GEMMA_BACKEND   = "google"
-except Exception:
-    pass
+    else:
+        _GEMMA_INIT_ERR = "GOOGLE_API_KEY not set"
+except Exception as _e:
+    _GEMMA_INIT_ERR = f"google-generativeai error: {_e}"
 
 if not _GEMMA_AVAILABLE:
     try:
@@ -76,8 +79,11 @@ if not _GEMMA_AVAILABLE:
             _gemma_hf        = InferenceClient(provider="featherless-ai", api_key=_HF_TOKEN)
             _GEMMA_AVAILABLE = True
             _GEMMA_BACKEND   = "hf"
-    except Exception:
-        pass
+            _GEMMA_INIT_ERR  = ""
+        else:
+            _GEMMA_INIT_ERR += " | HF_TOKEN not set"
+    except Exception as _e2:
+        _GEMMA_INIT_ERR += f" | hf error: {_e2}"
 
 _GEMMA_DISPLAY = (
     f"{_GEMMA_MODEL} via Google AI Studio" if _GEMMA_BACKEND == "google"
@@ -680,9 +686,10 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
         )
     else:
         actions      = _fallback_actions(src, dst)
+        _err_hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*" if _GEMMA_INIT_ERR else ""
         gemma_display = (
-            f"[AI] **Gemma** unavailable — using safety-verified fallback plan.\n\n"
-            f"*(Set `HF_TOKEN` and accept model terms to enable live inference.)*"
+            f"[AI] **Gemma** unavailable — using safety-verified fallback plan."
+            f"{_err_hint}"
         )
 
     # ── Execute Gemma's plan step by step through HDP-P ──────────────────────
