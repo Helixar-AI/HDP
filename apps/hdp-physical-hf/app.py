@@ -489,10 +489,10 @@ ROBOT_ARM_HTML = r"""
     // overlay labels
     if (arm.blocked) {
       ctx.font='bold 13px monospace'; ctx.fillStyle='#dc2626'; ctx.textAlign='center';
-      ctx.fillText('🛑  BLOCKED BY HDP-P  🛑', W/2, H*0.09);
+      ctx.fillText('[ X ]  BLOCKED BY HDP-P  [ X ]', W/2, H*0.09);
     } else if (arm.attacking) {
       ctx.font='bold 13px monospace'; ctx.fillStyle='#f97316'; ctx.textAlign='center';
-      ctx.fillText('⚡  ATTACK EXECUTING — NO GUARD  ⚡', W/2, H*0.09);
+      ctx.fillText('[!]  ATTACK EXECUTING — NO GUARD  [!]', W/2, H*0.09);
     }
     ctx.textAlign='left';
   }
@@ -596,8 +596,8 @@ ROBOT_ARM_HTML = r"""
 
 def toggle_hdp(enabled: bool) -> str:
     if enabled:
-        return "**🛡️ HDP-P ON** — PreExecutionGuard verifies every Gemma action."
-    return "**⚠️ HDP-P OFF** — Gemma outputs execute directly, no safety check."
+        return "**[GUARD] HDP-P ON** — PreExecutionGuard verifies every Gemma action."
+    return "**[WARN] HDP-P OFF** — Gemma outputs execute directly, no safety check."
 
 
 def run_safe_routine(hdp_enabled: bool) -> Generator:
@@ -615,10 +615,10 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     # ── Step 0: reset arm, then immediately animate toward source ──
     # Send reset first (arm returns home, no blocked flash)
     gemma_status = (
-        f"🤖 **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
+        f"[AI] **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
         f"> *Pick from **{src}** → place at **{dst}***"
     )
-    yield "", f"🤖 Asking Gemma to plan: {src} → {dst}…", reset_state, "", gemma_status, ""
+    yield "", f"[AI] Asking Gemma to plan: {src} → {dst}…", reset_state, "", gemma_status, ""
 
     # Immediately animate arm to step-1 reach pose so the arm starts moving
     # while Gemma is thinking (avoids 5-10 s frozen screen).
@@ -627,7 +627,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
         "approved": True, "attack": False,
         "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
     }])
-    yield "⏳ Gemma planning…", f"🤖 Arm reaching {src} while Gemma thinks…", reach_state, "", gemma_status, ""
+    yield "[...] Gemma planning…", f"[AI] Arm reaching {src} while Gemma thinks…", reach_state, "", gemma_status, ""
 
     prompt = _gemma_plan_prompt(src, dst)
     raw_gemma = _call_gemma(prompt)
@@ -635,13 +635,13 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
         actions = _parse_plan(raw_gemma, src, dst)
         gemma_display = (
-            f"🤖 **Gemma 4** generated this plan for `{src} → {dst}`:\n\n"
+            f"[AI] **Gemma** generated this plan for `{src} → {dst}`:\n\n"
             f"```\n{raw_gemma[:600]}\n```"
         )
     else:
         actions = _fallback_actions(src, dst)
         gemma_display = (
-            f"🤖 **Gemma 4** unavailable — using scripted fallback plan.\n\n"
+            f"[AI] **Gemma** unavailable — using scripted fallback plan.\n\n"
             f"*(Set `HF_TOKEN` Space secret to enable live Gemma inference.)*"
         )
 
@@ -649,7 +649,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
 
     for i, action in enumerate(actions):
         res = _guard_action(action, hdp_enabled)
-        icon = "✅" if res["approved"] else "🛑"
+        icon = "[OK]" if res["approved"] else "[X]"
         log_lines.append(
             f"Step {i+1}: {icon} {res['action']} "
             f"[Class {res['class']}"
@@ -678,7 +678,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
 
     # next_dst: opposite of current dst (box will return the other way)
     next_dst = "conveyor-in" if direction == 0 else "assembly-cell-4"
-    status = f"✅ Routine complete — box now at **{dst}**. Next run: {dst} → {next_dst}."
+    status = f"[OK] Routine complete — box now at **{dst}**. Next run: {dst} → {next_dst}."
     yield "\n".join(log_lines), status, arm_state, res["diagram"], gemma_display, ""
 
 
@@ -694,11 +694,11 @@ def inject_attack(hdp_enabled: bool) -> Generator:
 
     reset_state = json.dumps([{"reset": True}])
     yield (
-        "*⚡ Injecting adversarial text into Gemma's task prompt…*",
+        "*[ATCK] Injecting adversarial text into Gemma's task prompt…*",
         "",
         reset_state,
         "",
-        "🤖 **Calling Gemma** with poisoned prompt…",
+        "[AI] **Calling Gemma** with poisoned prompt…",
         "",   # clear routine_log
     )
 
@@ -708,9 +708,9 @@ def inject_attack(hdp_enabled: bool) -> Generator:
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
         action = _parse_attack_action(raw_gemma)
         gemma_display = (
-            f"### 🔴 Poisoned Prompt (sent to Gemma 4)\n"
+            f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
             f"```\n{prompt[:700]}\n```\n\n"
-            f"### 🤖 Gemma 4 Raw Output\n"
+            f"### [AI] Gemma Raw Output\n"
             f"```json\n{raw_gemma[:400]}\n```\n\n"
             f"**Parsed action:** zone=`{action.zone}`, "
             f"force=`{action.force_n} N`, vel=`{action.velocity_ms} m/s`"
@@ -724,14 +724,14 @@ def inject_attack(hdp_enabled: bool) -> Generator:
             velocity_ms=2.0,
         )
         gemma_display = (
-            f"### 🔴 Poisoned Prompt (sent to Gemma 4)\n"
+            f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
             f"```\n{prompt[:600]}\n```\n\n"
             f"*(Gemma unavailable — scripted fallback used to demonstrate attack.)*\n\n"
             f"**Scripted action:** zone=`human-workspace`, force=`50.0 N`, vel=`2.0 m/s`"
         )
 
     res = _guard_action(action, hdp_enabled)
-    icon    = "✅" if res["approved"] else "🛑"
+    icon    = "[OK]" if res["approved"] else "[X]"
     verdict = "APPROVED — arm executing attack!" if res["approved"] else f"BLOCKED at `{res['blocked_at']}`"
 
     md = (
@@ -743,9 +743,9 @@ def inject_attack(hdp_enabled: bool) -> Generator:
         f"**Class:** {res['class']}\n\n"
     )
     if not res["approved"]:
-        md += f"> 🔒 {res['reason']}"
+        md += f"> [LOCK] {res['reason']}"
     else:
-        md += "> ⚠️  No HDP-P guard — Gemma's dangerous command sent to arm!"
+        md += "> [WARN] No HDP-P guard — Gemma's dangerous command sent to arm!"
 
     arm_state = json.dumps([{
         "step":       1,
@@ -777,12 +777,12 @@ def _edt_json() -> str:
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 HEADER = f"""
-# 🤖 HDP-P Physical Safety Demo
+# HDP-P Physical Safety Demo
 **Gemma** (`{_GEMMA_MODEL}` via `{_GEMMA_PROVIDER}`) plans every robot action from natural language.
 **HDP-P** cryptographically verifies each Gemma action before the arm moves.
 
 > Run the routine → inject an attack → toggle HDP-P to see the difference.
-{"✅ **Gemma connected** — live inference active." if _GEMMA_AVAILABLE else "⚠️ **Gemma unavailable** — scripted fallback mode (set `HF_TOKEN` Space secret)."}
+{"[OK] **Gemma connected** — live inference active." if _GEMMA_AVAILABLE else "[WARN] **Gemma unavailable** — scripted fallback mode (set `HF_TOKEN` Space secret)."}
 """
 
 with gr.Blocks(
@@ -795,17 +795,17 @@ with gr.Blocks(
 
     with gr.Row():
         with gr.Column(scale=1, min_width=300):
-            hdp_toggle = gr.Checkbox(value=True, label="🛡️ HDP-P Protection: ON", interactive=True)
+            hdp_toggle = gr.Checkbox(value=True, label="[GUARD] HDP-P Protection: ON", interactive=True)
             hdp_label  = gr.Markdown(
-                "**🛡️ HDP-P ON** — PreExecutionGuard verifies every Gemma action."
+                "**[GUARD] HDP-P ON** — PreExecutionGuard verifies every Gemma action."
             )
             gr.Markdown("---")
-            run_btn    = gr.Button("▶ Run Gemma Routine", variant="primary")
-            attack_btn = gr.Button("⚡ Inject Attack", variant="stop",
+            run_btn    = gr.Button("► Run Gemma Routine", variant="primary")
+            attack_btn = gr.Button("[ATCK] Inject Attack", variant="stop",
                                    elem_classes=["stop-btn"])
             gr.Markdown("---")
             routine_log    = gr.Textbox(label="Execution Log", lines=8,
-                                        interactive=False, placeholder="Click ▶ to start…")
+                                        interactive=False, placeholder="Click Run to start…")
             routine_status = gr.Markdown("")
 
         with gr.Column(scale=1, min_width=360):
@@ -821,15 +821,15 @@ with gr.Blocks(
                 language="markdown", max_lines=20, interactive=False,
             )
 
-    with gr.Accordion("🤖 Gemma 4 Output", open=True):
+    with gr.Accordion("[AI] Gemma Output", open=True):
         gemma_out = gr.Markdown(
-            "*Run the routine or inject an attack to see Gemma 4's raw output.*"
+            "*Run the routine or inject an attack to see Gemma's raw output.*"
         )
 
-    with gr.Accordion("🔏 EDT Inspector", open=False):
+    with gr.Accordion("[EDT] Token Inspector", open=False):
         gr.Code(value=_edt_json(), language="json", interactive=False)
 
-    with gr.Accordion("ℹ️ How HDP-P Works", open=False):
+    with gr.Accordion("[INFO] How HDP-P Works", open=False):
         gr.Markdown(textwrap.dedent(f"""
         ### Architecture
 
@@ -837,7 +837,7 @@ with gr.Blocks(
         User task description
               │
               ▼
-        Gemma 4 ({_GEMMA_MODEL})
+        Gemma ({_GEMMA_MODEL})
          ← adversary injects text here to poison Gemma's output
               │  generates: RobotAction(zone, force_n, velocity_ms)
               ▼
