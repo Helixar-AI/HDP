@@ -102,6 +102,9 @@ _SIGNED_EDT: SignedEdt = _run_async(
     sign_edt(_EDT_TOKEN, _PRIVATE_KEY, kid="demo-key-001")
 )
 
+# Shared executor for overlapping Gemma calls with arm animation
+_gemma_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
 _classifier = IrreversibilityClassifier()
 _guard       = PreExecutionGuard()
 
@@ -610,27 +613,29 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
     dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
 
-    reset_state = json.dumps([{"reset": True}])
+    # ── Fire Gemma IMMEDIATELY — before any yield, so it runs concurrently
+    # with the arm animation rather than after it.
+    prompt = _gemma_plan_prompt(src, dst)
+    gemma_future = _gemma_executor.submit(_call_gemma, prompt)
 
-    # ── Step 0: reset arm, then immediately animate toward source ──
-    # Send reset first (arm returns home, no blocked flash)
+    reset_state = json.dumps([{"reset": True}])
     gemma_status = (
         f"[AI] **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
         f"> *Pick from **{src}** → place at **{dst}***"
     )
     yield "", f"[AI] Asking Gemma to plan: {src} → {dst}…", reset_state, "", gemma_status, ""
 
-    # Immediately animate arm to step-1 reach pose so the arm starts moving
-    # while Gemma is thinking (avoids 5-10 s frozen screen).
+    # Animate arm to step-1 reach pose while Gemma is already running in bg
     reach_state = json.dumps([{
         "step": 1, "direction": direction,
         "approved": True, "attack": False,
         "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
     }])
-    yield "[...] Gemma planning…", f"[AI] Arm reaching {src} while Gemma thinks…", reach_state, "", gemma_status, ""
+    yield "[...] Gemma planning…", f"[AI] Arm reaching {src}…", reach_state, "", gemma_status, ""
 
-    prompt = _gemma_plan_prompt(src, dst)
-    raw_gemma = _call_gemma(prompt)
+    # Collect result — Gemma has been running since before first yield,
+    # so most of the inference time is already consumed.
+    raw_gemma = gemma_future.result(timeout=60)
 
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
         actions = _parse_plan(raw_gemma, src, dst)
@@ -692,6 +697,10 @@ def inject_attack(hdp_enabled: bool) -> Generator:
     src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
     dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
 
+    # Fire Gemma immediately — runs while reset animation plays
+    prompt = _gemma_attack_prompt(src, dst)
+    gemma_future = _gemma_executor.submit(_call_gemma, prompt, True)
+
     reset_state = json.dumps([{"reset": True}])
     yield (
         "*[ATCK] Injecting adversarial text into Gemma's task prompt…*",
@@ -702,8 +711,7 @@ def inject_attack(hdp_enabled: bool) -> Generator:
         "",   # clear routine_log
     )
 
-    prompt = _gemma_attack_prompt(src, dst)
-    raw_gemma = _call_gemma(prompt, single=True)
+    raw_gemma = gemma_future.result(timeout=60)
 
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
         action = _parse_attack_action(raw_gemma)
