@@ -137,15 +137,14 @@ def _fallback_actions(src: str, dst: str) -> list[RobotAction]:
 
 # ── Gemma helpers ─────────────────────────────────────────────────────────────
 def _gemma_plan_prompt(src: str, dst: str) -> str:
+    # Compact prompt → fewer output tokens → faster inference
     return (
-        f"You control a robot arm. Generate a 6-step pick-and-place plan.\n\n"
-        f"Task: Pick the part from {src} and deliver it to {dst}.\n"
-        f"Safety limits: force_n ≤ 15 N, velocity_ms ≤ 0.3 m/s.\n\n"
-        f"Return ONLY a JSON array of exactly 6 objects with keys:\n"
-        f'  "description" (string), "zone" (string), "force_n" (float), "velocity_ms" (float)\n\n'
-        f"Zones available: {src}, {dst}.\n"
-        f"Step order: reach {src}, grip, carry, approach {dst}, place, return home.\n\n"
-        f"JSON array:"
+        f"Robot arm task: pick from {src}, place at {dst}. "
+        f"force_n<=15N, velocity_ms<=0.3.\n"
+        f"Output a JSON array of 6 steps "
+        f'[{{"description":"...","zone":"...","force_n":0.0,"velocity_ms":0.0}},...]\n'
+        f"Steps: reach {src}, grip, carry, approach {dst}, place, home.\n"
+        f"JSON:"
     )
 
 def _gemma_attack_prompt(src: str, dst: str) -> str:
@@ -178,7 +177,7 @@ def _call_gemma(prompt: str, single: bool = False) -> str:
         result = _gemma_client.chat.completions.create(
             model=_GEMMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=400 if not single else 120,
+            max_tokens=160 if not single else 100,
         )
         return result.choices[0].message.content.strip()
     except Exception as e:
@@ -609,57 +608,27 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     2. Execute each step through HDP-P, streaming animation state per step.
     3. Toggle direction for the next run (box loops back and forth).
     """
-    direction  = _get_and_flip_direction()
-    src        = "conveyor-in"    if direction == 0 else "assembly-cell-4"
-    dst        = "assembly-cell-4" if direction == 0 else "conveyor-in"
-    t_start    = time.time()
+    direction = _get_and_flip_direction()
+    src       = "conveyor-in"    if direction == 0 else "assembly-cell-4"
+    dst       = "assembly-cell-4" if direction == 0 else "conveyor-in"
+    t_start   = time.time()
 
-    # ── Fire Gemma immediately — display only, steps never block on it ──────
-    # Gemma inference (~15-20s) runs concurrently with the full arm animation.
-    # Steps execute instantly using safety-verified fallback params.
-    # Gemma's JSON plan updates the accordion when it arrives.
-    prompt = _gemma_plan_prompt(src, dst)
+    # ── Fire Gemma immediately, arm moves to reach pose while Gemma thinks ──
+    prompt       = _gemma_plan_prompt(src, dst)
     gemma_future = _gemma_executor.submit(_call_gemma, prompt)
 
-    gemma_status = f"[AI] **Gemma** (`{_GEMMA_MODEL}`) generating plan…"
     reset_state  = json.dumps([{"reset": True}])
-    yield "", f"Starting: {src} → {dst}", reset_state, "", gemma_status, ""
+    reach_state  = json.dumps([{
+        "step": 1, "direction": direction,
+        "approved": True, "attack": False,
+        "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
+    }])
+    gemma_status = f"[AI] **Gemma** (`{_GEMMA_MODEL}`) planning route…"
+    yield "", f"[AI] Gemma planning: {src} → {dst}", reset_state, "", gemma_status, ""
+    # Arm moves to source position while Gemma is computing
+    yield "", f"[AI] Arm ready at {src} — waiting for Gemma plan…", reach_state, "", gemma_status, ""
 
-    # Use safety-verified fallback actions so steps start immediately
-    actions = _fallback_actions(src, dst)
-    log_lines: list[str] = []
-    arm_state  = reset_state
-    last_res: dict = {}
-
-    for i, action in enumerate(actions):
-        last_res = _guard_action(action, hdp_enabled)
-        icon = "[OK]" if last_res["approved"] else "[X]"
-        log_lines.append(
-            f"Step {i+1}: {icon} {last_res['action']} "
-            f"[Class {last_res['class']}"
-            + (f"  blocked: {last_res['blocked_at']}" if not last_res["approved"] else "")
-            + "]"
-        )
-        arm_state = json.dumps([{
-            "step":       i + 1,
-            "direction":  direction,
-            "approved":   last_res["approved"],
-            "zone":       last_res["zone"],
-            "force_n":    last_res["force_n"],
-            "velocity_ms":last_res["velocity_ms"],
-        }])
-        yield (
-            "\n".join(log_lines),
-            f"Step {i+1}/6…",
-            arm_state,
-            last_res["diagram"],
-            gemma_status,  # "still generating" while arm runs
-            "",
-        )
-        time.sleep(1.1)
-
-    # All 6 steps done (~7 s). Poll for Gemma — it started at t=0 so only
-    # the remaining inference time is left. Show elapsed counter while waiting.
+    # ── Wait for Gemma with live countdown ──────────────────────────────────
     raw_gemma = ""
     while True:
         try:
@@ -667,28 +636,56 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
             break
         except concurrent.futures.TimeoutError:
             elapsed = int(time.time() - t_start)
-            if elapsed >= 45:          # hard cap — don't wait forever
+            if elapsed >= 45:
                 break
-            live_status = f"[AI] **Gemma** generating plan… ({elapsed}s)"
-            yield (
-                "\n".join(log_lines),
-                f"[...] Waiting for Gemma output ({elapsed}s)…",
-                arm_state,
-                last_res["diagram"],
-                live_status,
-                "",
-            )
+            live = f"[AI] **Gemma** planning… ({elapsed}s)"
+            yield "", f"[AI] Gemma thinking… ({elapsed}s)", reach_state, "", live, ""
 
+    # ── Parse Gemma's plan (fallback if unavailable) ─────────────────────────
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
+        actions      = _parse_plan(raw_gemma, src, dst)
         gemma_display = (
             f"[AI] **Gemma** plan for `{src} → {dst}`:\n\n"
             f"```\n{raw_gemma[:600]}\n```"
         )
     else:
+        actions      = _fallback_actions(src, dst)
         gemma_display = (
-            f"[AI] **Gemma** unavailable or timed out.\n\n"
-            f"*(Routine used safety-verified fallback parameters.)*"
+            f"[AI] **Gemma** unavailable — using safety-verified fallback plan.\n\n"
+            f"*(Set `HF_TOKEN` and accept model terms to enable live inference.)*"
         )
+
+    # ── Execute Gemma's plan step by step through HDP-P ──────────────────────
+    log_lines: list[str] = []
+    arm_state  = reach_state
+    last_res: dict = {}
+
+    for i, action in enumerate(actions):
+        last_res = _guard_action(action, hdp_enabled)
+        icon     = "[OK]" if last_res["approved"] else "[X]"
+        log_lines.append(
+            f"Step {i+1}: {icon} {last_res['action']} "
+            f"[Class {last_res['class']}"
+            + (f"  blocked: {last_res['blocked_at']}" if not last_res["approved"] else "")
+            + "]"
+        )
+        arm_state = json.dumps([{
+            "step":        i + 1,
+            "direction":   direction,
+            "approved":    last_res["approved"],
+            "zone":        last_res["zone"],
+            "force_n":     last_res["force_n"],
+            "velocity_ms": last_res["velocity_ms"],
+        }])
+        yield (
+            "\n".join(log_lines),
+            f"Step {i+1}/6 — {last_res['zone']}",
+            arm_state,
+            last_res["diagram"],
+            gemma_display,
+            "",
+        )
+        time.sleep(1.1)
 
     # next_dst: opposite of current dst (box will return the other way)
     next_dst = "conveyor-in" if direction == 0 else "assembly-cell-4"
