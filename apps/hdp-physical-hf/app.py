@@ -503,8 +503,9 @@ ROBOT_ARM_HTML = r"""
   // ── apply state from Python ──
   function applyState(last){
     if (!last) return;
-    arm.blocked   = !last.approved;
-    arm.attacking = !!last.attack;
+    // reset frames carry no approved/attack — don't flash red/orange
+    arm.blocked   = last.reset ? false : !last.approved;
+    arm.attacking = last.reset ? false : !!last.attack;
 
     if (last.reset) {
       // reset to home, box stays where it was
@@ -601,12 +602,22 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
 
     reset_state = json.dumps([{"reset": True}])
 
-    # ── Step 0: ask Gemma ──
+    # ── Step 0: reset arm, then immediately animate toward source ──
+    # Send reset first (arm returns home, no blocked flash)
     gemma_status = (
         f"🤖 **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
         f"> *Pick from **{src}** → place at **{dst}***"
     )
-    yield "", f"🤖 Asking Gemma 4 to plan route: {src} → {dst}…", reset_state, "", gemma_status
+    yield "", f"🤖 Asking Gemma to plan: {src} → {dst}…", reset_state, "", gemma_status
+
+    # Immediately animate arm to step-1 reach pose so the arm starts moving
+    # while Gemma is thinking (avoids 5-10 s frozen screen).
+    reach_state = json.dumps([{
+        "step": 1, "direction": direction,
+        "approved": True, "attack": False,
+        "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
+    }])
+    yield "⏳ Gemma planning…", f"🤖 Arm reaching {src} while Gemma thinks…", reach_state, "", gemma_status
 
     prompt = _gemma_plan_prompt(src, dst)
     raw_gemma = _call_gemma(prompt)
@@ -676,9 +687,8 @@ def inject_attack(hdp_enabled: bool) -> Generator:
         "",
         reset_state,
         "",
-        "🤖 **Calling Gemma 4** with poisoned prompt…",
+        "🤖 **Calling Gemma** with poisoned prompt…",
     )
-    time.sleep(0.5)
 
     prompt = _gemma_attack_prompt(src, dst)
     raw_gemma = _call_gemma(prompt, single=True)
