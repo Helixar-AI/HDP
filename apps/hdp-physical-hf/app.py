@@ -1,8 +1,9 @@
-"""HDP-P Physical Safety Demo — Gemma 4 + Embodied Delegation Tokens.
+"""HDP-P Physical Safety Demo — Gemma 4 31B + Embodied Delegation Tokens.
 
-Gemma 4 is the robot brain: it plans every pick-and-place action from natural
-language.  HDP-P (PreExecutionGuard + signed EDT) is the safety layer that
-verifies each Gemma-generated action before the arm moves.
+Gemma 4 31B (via Google AI Studio) is the robot brain: it plans every
+pick-and-place action from natural language.  HDP-P (PreExecutionGuard +
+signed EDT) is the safety layer that verifies each Gemma action before
+the arm moves.
 
 Attack story:
   An adversary injects malicious text into the task prompt Gemma receives.
@@ -51,7 +52,7 @@ from hdp_physical import (
 # Fallback chain (checked in order):
 #   1. Google AI Studio  — GOOGLE_API_KEY + GEMMA_MODEL (default: gemma-4-e4b-it)
 #   2. HF InferenceClient — HF_TOKEN + featherless-ai + gemma-3-12b-it
-_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-e4b-it")
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _GEMMA_AVAILABLE = False
@@ -687,11 +688,11 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     else:
         actions      = _fallback_actions(src, dst)
         if raw_gemma.startswith("[Gemma error"):
-            _err_hint = f"\n\n*Call error: `{raw_gemma}`*"
+            _err_hint = f"\n\n*Error: `{raw_gemma}`*"
         elif _GEMMA_INIT_ERR:
             _err_hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*"
         else:
-            _err_hint = f"\n\n*backend={_GEMMA_BACKEND!r} available={_GEMMA_AVAILABLE} raw={raw_gemma!r:.100}*"
+            _err_hint = ""
         gemma_display = (
             f"[AI] **Gemma** unavailable — using safety-verified fallback plan."
             f"{_err_hint}"
