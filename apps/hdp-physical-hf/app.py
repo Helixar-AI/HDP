@@ -613,78 +613,68 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
     dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
 
-    # ── Fire Gemma IMMEDIATELY — before any yield, so it runs concurrently
-    # with the arm animation rather than after it.
+    # ── Fire Gemma immediately — display only, steps never block on it ──────
+    # Gemma inference (~15-20s) runs concurrently with the full arm animation.
+    # Steps execute instantly using safety-verified fallback params.
+    # Gemma's JSON plan updates the accordion when it arrives.
     prompt = _gemma_plan_prompt(src, dst)
     gemma_future = _gemma_executor.submit(_call_gemma, prompt)
 
-    reset_state = json.dumps([{"reset": True}])
-    gemma_status = (
-        f"[AI] **Gemma** (`{_GEMMA_MODEL}`) planning:\n"
-        f"> *Pick from **{src}** → place at **{dst}***"
-    )
-    yield "", f"[AI] Asking Gemma to plan: {src} → {dst}…", reset_state, "", gemma_status, ""
+    gemma_status = f"[AI] **Gemma** (`{_GEMMA_MODEL}`) generating plan…"
+    reset_state  = json.dumps([{"reset": True}])
+    yield "", f"Starting: {src} → {dst}", reset_state, "", gemma_status, ""
 
-    # Animate arm to step-1 reach pose while Gemma is already running in bg
-    reach_state = json.dumps([{
-        "step": 1, "direction": direction,
-        "approved": True, "attack": False,
-        "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
-    }])
-    yield "[...] Gemma planning…", f"[AI] Arm reaching {src}…", reach_state, "", gemma_status, ""
-
-    # Collect result — Gemma has been running since before first yield,
-    # so most of the inference time is already consumed.
-    raw_gemma = gemma_future.result(timeout=60)
-
-    if raw_gemma and not raw_gemma.startswith("[Gemma error"):
-        actions = _parse_plan(raw_gemma, src, dst)
-        gemma_display = (
-            f"[AI] **Gemma** generated this plan for `{src} → {dst}`:\n\n"
-            f"```\n{raw_gemma[:600]}\n```"
-        )
-    else:
-        actions = _fallback_actions(src, dst)
-        gemma_display = (
-            f"[AI] **Gemma** unavailable — using scripted fallback plan.\n\n"
-            f"*(Set `HF_TOKEN` Space secret to enable live Gemma inference.)*"
-        )
-
+    # Use safety-verified fallback actions so steps start immediately
+    actions = _fallback_actions(src, dst)
     log_lines: list[str] = []
+    arm_state  = reset_state
+    last_res: dict = {}
 
     for i, action in enumerate(actions):
-        res = _guard_action(action, hdp_enabled)
-        icon = "[OK]" if res["approved"] else "[X]"
+        last_res = _guard_action(action, hdp_enabled)
+        icon = "[OK]" if last_res["approved"] else "[X]"
         log_lines.append(
-            f"Step {i+1}: {icon} {res['action']} "
-            f"[Class {res['class']}"
-            + (f"  blocked: {res['blocked_at']}" if not res["approved"] else "")
+            f"Step {i+1}: {icon} {last_res['action']} "
+            f"[Class {last_res['class']}"
+            + (f"  blocked: {last_res['blocked_at']}" if not last_res["approved"] else "")
             + "]"
         )
-
         arm_state = json.dumps([{
             "step":       i + 1,
             "direction":  direction,
-            "approved":   res["approved"],
-            "zone":       res["zone"],
-            "force_n":    res["force_n"],
-            "velocity_ms":res["velocity_ms"],
+            "approved":   last_res["approved"],
+            "zone":       last_res["zone"],
+            "force_n":    last_res["force_n"],
+            "velocity_ms":last_res["velocity_ms"],
         }])
-
         yield (
             "\n".join(log_lines),
             f"Step {i+1}/6…",
             arm_state,
-            res["diagram"],
-            gemma_display,
-            "",   # clear attack_result panel
+            last_res["diagram"],
+            gemma_status,  # "still generating" while arm runs
+            "",
         )
         time.sleep(1.1)
+
+    # All 6 steps done (~7 s). Check if Gemma finished during that time.
+    try:
+        raw_gemma = gemma_future.result(timeout=0)   # non-blocking
+    except concurrent.futures.TimeoutError:
+        raw_gemma = ""   # still running — show status only
+
+    if raw_gemma and not raw_gemma.startswith("[Gemma error"):
+        gemma_display = (
+            f"[AI] **Gemma** plan for `{src} → {dst}`:\n\n"
+            f"```\n{raw_gemma[:600]}\n```"
+        )
+    else:
+        gemma_display = gemma_status  # Gemma still thinking or unavailable
 
     # next_dst: opposite of current dst (box will return the other way)
     next_dst = "conveyor-in" if direction == 0 else "assembly-cell-4"
     status = f"[OK] Routine complete — box now at **{dst}**. Next run: {dst} → {next_dst}."
-    yield "\n".join(log_lines), status, arm_state, res["diagram"], gemma_display, ""
+    yield "\n".join(log_lines), status, arm_state, last_res["diagram"], gemma_display, ""
 
 
 def inject_attack(hdp_enabled: bool) -> Generator:
