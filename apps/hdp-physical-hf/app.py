@@ -53,7 +53,7 @@ from hdp_physical import (
 #   2. HF featherless-ai     — HF_TOKEN + gemma-3-12b-it
 import requests as _requests
 
-_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-26b-a4b-it")
+_GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
 _GEMMA_AVAILABLE = False
@@ -125,10 +125,35 @@ _SIGNED_EDT: SignedEdt = _run_async(
 )
 
 # Shared executor for overlapping Gemma calls with arm animation
-_gemma_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+_gemma_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 _classifier = IrreversibilityClassifier()
 _guard       = PreExecutionGuard()
+
+# ── Plan prefetch cache ───────────────────────────────────────────────────────
+# Plans are generated in the background so they're ready when the button is
+# clicked.  At startup both directions are pre-warmed; after each run the next
+# direction is pre-warmed during execution.
+_prefetch_lock: threading.Lock = threading.Lock()
+_prefetch: dict[int, concurrent.futures.Future] = {}   # direction → Future[str]
+
+def _start_prefetch(direction: int) -> None:
+    """Fire a background Gemma call for `direction` if not already running."""
+    if not _GEMMA_AVAILABLE:
+        return
+    with _prefetch_lock:
+        fut = _prefetch.get(direction)
+        if fut is None or fut.done():
+            src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
+            dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
+            _prefetch[direction] = _gemma_executor.submit(
+                _call_gemma, _gemma_plan_prompt(src, dst)
+            )
+
+def _pop_prefetch(direction: int) -> "concurrent.futures.Future | None":
+    """Return the cached future for this direction (removes it from cache)."""
+    with _prefetch_lock:
+        return _prefetch.pop(direction, None)
 
 # ── Box direction state (alternates each run) ─────────────────────────────────
 # 0 = conveyor-in → assembly-cell-4
@@ -627,6 +652,9 @@ ROBOT_ARM_HTML = r"""
 </script>
 """
 
+# Pre-warm direction 0 at startup — plan is ready before first button click
+_start_prefetch(0)
+
 # ── Gradio callbacks ──────────────────────────────────────────────────────────
 
 def toggle_hdp(enabled: bool):
@@ -650,9 +678,13 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     dst       = "assembly-cell-4" if direction == 0 else "conveyor-in"
     t_start   = time.time()
 
-    # ── Fire Gemma immediately, arm moves to reach pose while Gemma thinks ──
-    prompt       = _gemma_plan_prompt(src, dst)
-    gemma_future = _gemma_executor.submit(_call_gemma, prompt)
+    # ── Use prefetched plan if ready, otherwise fire fresh call ──────────────
+    gemma_future = _pop_prefetch(direction)
+    if gemma_future is None:
+        gemma_future = _gemma_executor.submit(_call_gemma, _gemma_plan_prompt(src, dst))
+
+    # Pre-warm the NEXT direction while this run executes
+    _start_prefetch(1 - direction)
 
     reset_state  = json.dumps([{"reset": True}])
     reach_state  = json.dumps([{
@@ -662,10 +694,9 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     }])
     gemma_status = f"[AI] **Gemma 4** (`{_GEMMA_DISPLAY}`) planning route…"
     yield "", f"[AI] Gemma planning: {src} → {dst}", reset_state, "", gemma_status, ""
-    # Arm moves to source position while Gemma is computing
-    yield "", f"[AI] Arm ready at {src} — waiting for Gemma plan…", reach_state, "", gemma_status, ""
+    yield "", f"[AI] Arm moving to {src}…", reach_state, "", gemma_status, ""
 
-    # ── Wait for Gemma with live countdown ──────────────────────────────────
+    # ── Wait for Gemma — max 15 s then fallback ──────────────────────────────
     raw_gemma = ""
     while True:
         try:
@@ -673,7 +704,7 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
             break
         except concurrent.futures.TimeoutError:
             elapsed = int(time.time() - t_start)
-            if elapsed >= 45:
+            if elapsed >= 15:
                 break
             live = f"[AI] **Gemma** planning… ({elapsed}s)"
             yield "", f"[AI] Gemma thinking… ({elapsed}s)", reach_state, "", live, ""
