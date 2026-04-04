@@ -609,9 +609,10 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     2. Execute each step through HDP-P, streaming animation state per step.
     3. Toggle direction for the next run (box loops back and forth).
     """
-    direction = _get_and_flip_direction()
-    src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
-    dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
+    direction  = _get_and_flip_direction()
+    src        = "conveyor-in"    if direction == 0 else "assembly-cell-4"
+    dst        = "assembly-cell-4" if direction == 0 else "conveyor-in"
+    t_start    = time.time()
 
     # ── Fire Gemma immediately — display only, steps never block on it ──────
     # Gemma inference (~15-20s) runs concurrently with the full arm animation.
@@ -657,11 +658,26 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
         )
         time.sleep(1.1)
 
-    # All 6 steps done (~7 s). Check if Gemma finished during that time.
-    try:
-        raw_gemma = gemma_future.result(timeout=0)   # non-blocking
-    except concurrent.futures.TimeoutError:
-        raw_gemma = ""   # still running — show status only
+    # All 6 steps done (~7 s). Poll for Gemma — it started at t=0 so only
+    # the remaining inference time is left. Show elapsed counter while waiting.
+    raw_gemma = ""
+    while True:
+        try:
+            raw_gemma = gemma_future.result(timeout=0.5)
+            break
+        except concurrent.futures.TimeoutError:
+            elapsed = int(time.time() - t_start)
+            if elapsed >= 45:          # hard cap — don't wait forever
+                break
+            live_status = f"[AI] **Gemma** generating plan… ({elapsed}s)"
+            yield (
+                "\n".join(log_lines),
+                f"[...] Waiting for Gemma output ({elapsed}s)…",
+                arm_state,
+                last_res["diagram"],
+                live_status,
+                "",
+            )
 
     if raw_gemma and not raw_gemma.startswith("[Gemma error"):
         gemma_display = (
@@ -669,7 +685,10 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
             f"```\n{raw_gemma[:600]}\n```"
         )
     else:
-        gemma_display = gemma_status  # Gemma still thinking or unavailable
+        gemma_display = (
+            f"[AI] **Gemma** unavailable or timed out.\n\n"
+            f"*(Routine used safety-verified fallback parameters.)*"
+        )
 
     # next_dst: opposite of current dst (box will return the other way)
     next_dst = "conveyor-in" if direction == 0 else "assembly-cell-4"
