@@ -1,0 +1,3 @@
+hdp-physical>=0.1.0
+cryptography>=42.0.0
+huggingface_hub>=0.20.0
