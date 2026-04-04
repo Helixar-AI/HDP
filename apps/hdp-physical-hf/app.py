@@ -686,7 +686,12 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
         )
     else:
         actions      = _fallback_actions(src, dst)
-        _err_hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*" if _GEMMA_INIT_ERR else ""
+        if raw_gemma.startswith("[Gemma error"):
+            _err_hint = f"\n\n*Call error: `{raw_gemma}`*"
+        elif _GEMMA_INIT_ERR:
+            _err_hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*"
+        else:
+            _err_hint = f"\n\n*backend={_GEMMA_BACKEND!r} available={_GEMMA_AVAILABLE} raw={raw_gemma!r:.100}*"
         gemma_display = (
             f"[AI] **Gemma** unavailable — using safety-verified fallback plan."
             f"{_err_hint}"
