@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HDP Platform</title>
+<style>
+  :root { --bg: #0a0a0f; --surface: #12121a; --border: #1e1e2e; --primary: #6366f1; --primary-hover: #818cf8; --text: #e2e8f0; --text-muted: #94a3b8; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; width: 400px; }
+  .login-box h1 { font-size: 1.5rem; margin-bottom: 1.5rem; text-align: center; }
+  .app-layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); padding: 1rem 0; flex-shrink: 0; }
+  .sidebar h2 { padding: 0 1rem; margin-bottom: 1.5rem; font-size: 1.1rem; color: var(--primary); }
+  .nav-item { display: block; width: 100%; padding: 0.65rem 1rem; background: none; border: none; color: var(--text-muted); text-align: left; cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
+  .nav-item:hover, .nav-item.active { background: rgba(99,102,241,0.1); color: var(--text); }
+  .main { flex: 1; padding: 2rem; overflow-y: auto; }
+  .page-title { font-size: 1.5rem; margin-bottom: 1.5rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+  .tile .value { font-size: 2rem; font-weight: 700; color: var(--primary); }
+  .tile .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
+  input, select, textarea { width: 100%; padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.9rem; margin-bottom: 0.75rem; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+  label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+  button, .btn { padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 0.9rem; transition: all 0.15s; }
+  .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-danger { background: var(--danger); color: white; border-color: var(--danger); }
+  .btn-secondary { background: transparent; color: var(--text); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-success { background: var(--success); color: white; border-color: var(--success); }
+  .form-row { margin-bottom: 0.75rem; }
+  .actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; }
+  .empty { color: var(--text-muted); text-align: center; padding: 2rem; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+  .badge-allow { background: rgba(34,197,94,0.15); color: var(--success); }
+  .badge-deny { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .sim-result { padding: 0.5rem 0.75rem; margin-top: 0.5rem; border-radius: 6px; font-size: 0.85rem; }
+  .sim-pass { background: rgba(34,197,94,0.1); border-left: 3px solid var(--success); }
+  .sim-fail { background: rgba(239,68,68,0.1); border-left: 3px solid var(--danger); }
+  .plan-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  .plan-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+  .plan-card.current { border-color: var(--primary); }
+  .plan-card h3 { font-size: 1.2rem; margin-bottom: 0.5rem; }
+  .plan-price { font-size: 2rem; font-weight: 700; color: var(--primary); }
+  .plan-price span { font-size: 0.9rem; color: var(--text-muted); font-weight: 400; }
+  .plan-features { list-style: none; margin: 1rem 0; }
+  .plan-features li { padding: 0.3rem 0; font-size: 0.85rem; color: var(--text-muted); }
+  .plan-features li::before { content: "✓ "; color: var(--success); }
+  .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+  .alert-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--success); }
+  .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--danger); }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; width: 500px; max-height: 80vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 1rem; }
+  .hidden { display: none !important; }
+  .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .checkbox-row input[type="checkbox"] { width: auto; margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen" class="login-container">
+  <div class="login-box">
+    <h1>HDP Platform</h1>
+    <div id="login-alert"></div>
+    <div class="form-row"><label>Email</label><input id="login-email" type="email" value="admin@helixar.ai"></div>
+    <div class="form-row"><label>Password</label><input id="login-password" type="password" value="admin123"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- App Shell -->
+<div id="app" class="app-layout hidden">
+  <div class="sidebar">
+    <h2>HDP</h2>
+    <button class="nav-item active" onclick="navigate('dashboard')">Dashboard</button>
+    <button class="nav-item" onclick="navigate('teams')">Teams</button>
+    <button class="nav-item" onclick="navigate('principals')">Principals</button>
+    <button class="nav-item" onclick="navigate('policies')">Policies</button>
+    <button class="nav-item" onclick="navigate('api-keys')">API Keys</button>
+    <button class="nav-item" onclick="navigate('billing')">Billing</button>
+    <button class="nav-item" onclick="navigate('integrations')">Integrations</button>
+    <button class="nav-item" onclick="navigate('export')">Export</button>
+    <button class="nav-item" onclick="navigate('settings')">Settings</button>
+  </div>
+  <div class="main" id="main-content"></div>
+</div>
+
+<!-- Modal container -->
+<div id="modal-container"></div>
+
+<script>
+let token = '';
+let currentPage = 'dashboard';
+
+async function api(path, opts = {}) {
+  const res = await fetch('/api' + path, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token, ...opts.headers },
+    ...opts,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+async function doLogin() {
+  try {
+    const data = await api('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('login-email').value,
+        password: document.getElementById('login-password').value,
+      }),
+    });
+    token = data.token;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    navigate('dashboard');
+  } catch (e) {
+    document.getElementById('login-alert').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+function navigate(page) {
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const items = document.querySelectorAll('.nav-item');
+  const idx = ['dashboard','teams','principals','policies','api-keys','billing','integrations','export','settings'].indexOf(page);
+  if (items[idx]) items[idx].classList.add('active');
+  renderPage();
+}
+
+async function renderPage() {
+  const c = document.getElementById('main-content');
+  try {
+    switch (currentPage) {
+      case 'dashboard': await renderDashboard(c); break;
+      case 'teams': await renderTeams(c); break;
+      case 'principals': await renderPrincipals(c); break;
+      case 'policies': await renderPolicies(c); break;
+      case 'api-keys': await renderApiKeys(c); break;
+      case 'billing': await renderBilling(c); break;
+      case 'integrations': await renderIntegrations(c); break;
+      case 'export': renderExport(c); break;
+      case 'settings': renderSettings(c); break;
+    }
+  } catch (e) {
+    c.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`;
+  }
+}
+
+/* ── Dashboard ── */
+async function renderDashboard(c) {
+  const stats = await api('/dashboard/stats');
+  // BUG FIX: Use ?? 0 to ensure tiles always show "0" instead of empty/blank
+  c.innerHTML = `
+    <h1 class="page-title">Dashboard</h1>
+    <div class="tiles">
+      <div class="tile"><div class="value">${stats.totalRequests ?? 0}</div><div class="label">Total Requests</div></div>
+      <div class="tile"><div class="value">${stats.verifiedTokens ?? 0}</div><div class="label">Verified Tokens</div></div>
+      <div class="tile"><div class="value">${stats.failedVerifications ?? 0}</div><div class="label">Failed Verifications</div></div>
+      <div class="tile"><div class="value">${stats.activeAgents ?? 0}</div><div class="label">Active Agents</div></div>
+      <div class="tile"><div class="value">${stats.delegationChains ?? 0}</div><div class="label">Delegation Chains</div></div>
+      <div class="tile"><div class="value">${stats.policyViolations ?? 0}</div><div class="label">Policy Violations</div></div>
+    </div>`;
+}
+
+/* ── Teams ── */
+async function renderTeams(c) {
+  const teams = await api('/teams');
+  c.innerHTML = `
+    <h1 class="page-title">Teams</h1>
+    <div class="actions" style="margin-bottom:1rem"><button class="btn btn-primary" onclick="showCreateTeamModal()">Create Team</button></div>
+    ${teams.length === 0 ? '<div class="empty">No teams yet. Create your first team.</div>' : `
+    <div class="card"><table><thead><tr><th>Name</th><th>Description</th><th>Members</th><th>Created</th><th></th></tr></thead><tbody>
+      ${teams.map(t => `<tr><td>${esc(t.name)}</td><td>${esc(t.description)}</td><td>${t.members.length}</td><td>${new Date(t.createdAt).toLocaleDateString()}</td><td><button class="btn btn-danger" onclick="deleteTeam('${t.id}')">Delete</button></td></tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+
+async function showCreateTeamModal() {
+  showModal('Create Team', `
+    <div class="form-row"><label>Name</label><input id="team-name"></div>
+    <div class="form-row"><label>Description</label><textarea id="team-desc" rows="3"></textarea></div>
+  `, async () => {
+    await api('/teams', { method: 'POST', body: JSON.stringify({ name: val('team-name'), description: val('team-desc') }) });
+    closeModal(); navigate('teams');
+  });
+}
+
+async function deleteTeam(id) { await api('/teams/' + id, { method: 'DELETE' }); navigate('teams'); }
+
+/* ── Principals ── */
+async function renderPrincipals(c) {
+  const principals = await api('/principals');
+  c.innerHTML = `
+    <h1 class="page-title">Principals</h1>
+    <div class="actions" style="margin-bottom:1rem"><button class="btn btn-primary" onclick="showCreatePrincipalModal()">Create Principal</button></div>
+    ${principals.length === 0 ? '<div class="empty">No principals yet. Create one to use with API keys and policies.</div>' : `
+    <div class="card"><table><thead><tr><th>Name</th><th>Display Name</th><th>ID Type</th><th>Created</th><th></th></tr></thead><tbody>
+      ${principals.map(p => `<tr><td>${esc(p.name)}</td><td>${esc(p.displayName)}</td><td>${p.idType}</td><td>${new Date(p.createdAt).toLocaleDateString()}</td><td><button class="btn btn-danger" onclick="deletePrincipal('${p.id}')">Delete</button></td></tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+
+async function showCreatePrincipalModal() {
+  showModal('Create Principal', `
+    <div class="form-row"><label>Name</label><input id="principal-name"></div>
+    <div class="form-row"><label>Display Name</label><input id="principal-display"></div>
+    <div class="form-row"><label>ID Type</label>
+      <select id="principal-type"><option value="opaque">opaque</option><option value="email">email</option><option value="uuid">uuid</option><option value="did">did</option></select>
+    </div>
+  `, async () => {
+    await api('/principals', { method: 'POST', body: JSON.stringify({ name: val('principal-name'), displayName: val('principal-display'), idType: val('principal-type') }) });
+    closeModal(); navigate('principals');
+  });
+}
+
+async function deletePrincipal(id) { await api('/principals/' + id, { method: 'DELETE' }); navigate('principals'); }
+
+/* ── Policies ── */
+async function renderPolicies(c) {
+  const policies = await api('/policies');
+  c.innerHTML = `
+    <h1 class="page-title">Policies</h1>
+    <div class="actions" style="margin-bottom:1rem">
+      <button class="btn btn-primary" onclick="showCreatePolicyModal()">Create Policy</button>
+    </div>
+    ${policies.length === 0 ? '<div class="empty">No policies yet.</div>' : `
+    <div class="card"><table><thead><tr><th>Name</th><th>Classification</th><th>Max Hops</th><th>Tools</th><th></th></tr></thead><tbody>
+      ${policies.map(p => `<tr>
+        <td>${esc(p.name)}</td><td>${p.dataClassification}</td><td>${p.maxHops}</td><td>${p.authorizedTools.length || 'any'}</td>
+        <td>
+          <button class="btn btn-secondary" onclick="showSimulateModal('${p.id}')">Simulate</button>
+          <button class="btn btn-danger" onclick="deletePolicy('${p.id}')">Delete</button>
+        </td>
+      </tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+
+async function showCreatePolicyModal() {
+  const principals = await api('/principals');
+  showModal('Create Policy', `
+    <div class="form-row"><label>Name</label><input id="policy-name"></div>
+    <div class="form-row"><label>Description</label><textarea id="policy-desc" rows="2"></textarea></div>
+    <div class="form-row"><label>Principal (optional)</label>
+      <select id="policy-principal"><option value="">-- none --</option>${principals.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    </div>
+    <div class="form-row"><label>Authorized Tools (comma-separated)</label><input id="policy-tools" placeholder="http_get, http_post"></div>
+    <div class="form-row"><label>Authorized Resources (comma-separated, * for wildcard)</label><input id="policy-resources" placeholder="https://api.example.com/*"></div>
+    <div class="form-row"><label>Data Classification</label>
+      <select id="policy-class"><option value="public">public</option><option value="internal" selected>internal</option><option value="confidential">confidential</option><option value="restricted">restricted</option></select>
+    </div>
+    <div class="form-row"><label>Max Hops</label><input id="policy-hops" type="number" value="5"></div>
+    <div class="checkbox-row"><input type="checkbox" id="policy-egress"><label for="policy-egress">Allow network egress</label></div>
+    <div class="checkbox-row"><input type="checkbox" id="policy-persist"><label for="policy-persist">Allow persistence</label></div>
+  `, async () => {
+    const tools = val('policy-tools').split(',').map(s => s.trim()).filter(Boolean);
+    const resources = val('policy-resources').split(',').map(s => s.trim()).filter(Boolean);
+    await api('/policies', { method: 'POST', body: JSON.stringify({
+      name: val('policy-name'), description: val('policy-desc'), principalId: val('policy-principal'),
+      authorizedTools: tools, authorizedResources: resources, dataClassification: val('policy-class'),
+      maxHops: parseInt(val('policy-hops')) || 5,
+      networkEgress: document.getElementById('policy-egress').checked,
+      persistence: document.getElementById('policy-persist').checked,
+    }) });
+    closeModal(); navigate('policies');
+  });
+}
+
+/**
+ * BUG FIX: Simulate button now actually calls the simulate endpoint
+ * and displays the results. Previously it had no onclick handler.
+ */
+async function showSimulateModal(policyId) {
+  showModal('Simulate Policy', `
+    <div class="form-row"><label>Tool to test</label><input id="sim-tool" placeholder="http_get"></div>
+    <div class="form-row"><label>Resource to test</label><input id="sim-resource" placeholder="https://api.example.com/data"></div>
+    <div class="form-row"><label>Number of hops</label><input id="sim-hops" type="number" value="1"></div>
+    <div id="sim-results"></div>
+  `, async () => {
+    const data = await api('/policies/' + policyId + '/simulate', { method: 'POST', body: JSON.stringify({
+      tool: val('sim-tool'), resource: val('sim-resource'), hops: parseInt(val('sim-hops')) || 1,
+    }) });
+    let html = `<div style="margin-top:1rem"><strong>Decision: <span class="badge ${data.decision === 'ALLOW' ? 'badge-allow' : 'badge-deny'}">${data.decision}</span></strong></div>`;
+    data.results.forEach(r => {
+      html += `<div class="sim-result ${r.passed ? 'sim-pass' : 'sim-fail'}">${r.check}: ${r.detail}</div>`;
+    });
+    document.getElementById('sim-results').innerHTML = html;
+    return false; // Don't close modal
+  }, 'Run Simulation');
+}
+
+async function deletePolicy(id) { await api('/policies/' + id, { method: 'DELETE' }); navigate('policies'); }
+
+/* ── API Keys ── */
+async function renderApiKeys(c) {
+  const keys = await api('/api-keys');
+  const principals = await api('/principals');
+  c.innerHTML = `
+    <h1 class="page-title">API Keys</h1>
+    ${principals.length === 0 ? '<div class="alert alert-error">You need to <a href="#" onclick="navigate(\'principals\');return false" style="color:var(--primary)">create a principal</a> before creating API keys.</div>' : ''}
+    <div class="actions" style="margin-bottom:1rem"><button class="btn btn-primary" onclick="showCreateKeyModal()">Create API Key</button></div>
+    ${keys.length === 0 ? '<div class="empty">No API keys yet.</div>' : `
+    <div class="card"><table><thead><tr><th>Name</th><th>Key</th><th>Principal</th><th>Created</th><th></th></tr></thead><tbody>
+      ${keys.map(k => `<tr><td>${esc(k.name)}</td><td><code>${k.keyPrefix}</code></td><td>${k.principalId || '-'}</td><td>${new Date(k.createdAt).toLocaleDateString()}</td><td><button class="btn btn-danger" onclick="deleteKey('${k.id}')">Delete</button></td></tr>`).join('')}
+    </tbody></table></div>`}`;
+}
+
+async function showCreateKeyModal() {
+  const principals = await api('/principals');
+  showModal('Create API Key', `
+    <div class="form-row"><label>Name</label><input id="key-name"></div>
+    <div class="form-row"><label>Principal (optional)</label>
+      <select id="key-principal"><option value="">-- none --</option>${principals.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    </div>
+  `, async () => {
+    const data = await api('/api-keys', { method: 'POST', body: JSON.stringify({ name: val('key-name'), principalId: val('key-principal') }) });
+    closeModal();
+    showModal('API Key Created', `
+      <div class="alert alert-success">Copy this key now — it won't be shown again.</div>
+      <div class="form-row"><label>Key</label><input value="${data.key}" readonly onclick="this.select()"></div>
+    `, () => { closeModal(); navigate('api-keys'); }, 'Done');
+  });
+}
+
+async function deleteKey(id) { await api('/api-keys/' + id, { method: 'DELETE' }); navigate('api-keys'); }
+
+/* ── Billing ── */
+async function renderBilling(c) {
+  // BUG FIX: Plans are now returned from the backend (were previously empty)
+  const plans = await api('/billing/plans');
+  c.innerHTML = `
+    <h1 class="page-title">Billing</h1>
+    <div class="plan-cards">
+      ${plans.map(p => `
+        <div class="plan-card ${p.current ? 'current' : ''}">
+          <h3>${esc(p.name)}</h3>
+          <div class="plan-price">${p.price === 0 ? 'Free' : '$' + p.price}<span>${p.price > 0 ? '/' + p.interval : ''}</span></div>
+          <ul class="plan-features">${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+          ${p.current ? '<button class="btn btn-secondary" disabled>Current Plan</button>' : `<button class="btn btn-primary" onclick="subscribePlan('${p.id}')">Upgrade</button>`}
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+async function subscribePlan(planId) {
+  await api('/billing/subscribe', { method: 'POST', body: JSON.stringify({ planId }) });
+  navigate('billing');
+}
+
+/* ── Integrations (SIEM) ── */
+async function renderIntegrations(c) {
+  const siem = await api('/integrations/siem');
+  c.innerHTML = `
+    <h1 class="page-title">Integrations</h1>
+    <div class="card">
+      <h3 style="margin-bottom:1rem">SIEM Integration</h3>
+      <div class="form-row"><label>Endpoint URL</label><input id="siem-endpoint" value="${esc(siem.endpoint || '')}"></div>
+      <div class="form-row"><label>Format</label>
+        <select id="siem-format"><option value="json" ${siem.format==='json'?'selected':''}>JSON</option><option value="cef" ${siem.format==='cef'?'selected':''}>CEF</option><option value="leef" ${siem.format==='leef'?'selected':''}>LEEF</option></select>
+      </div>
+      <div class="checkbox-row"><input type="checkbox" id="siem-enabled" ${siem.enabled?'checked':''}><label for="siem-enabled">Enabled</label></div>
+      <div id="siem-alert"></div>
+      <!-- BUG FIX: Save button was missing. Added onclick handler that calls PUT /api/integrations/siem -->
+      <div class="actions">
+        <button class="btn btn-primary" onclick="saveSiem()">Save</button>
+        <button class="btn btn-danger" onclick="deleteSiem()">Remove</button>
+      </div>
+    </div>`;
+}
+
+async function saveSiem() {
+  try {
+    await api('/integrations/siem', { method: 'PUT', body: JSON.stringify({
+      endpoint: val('siem-endpoint'), format: val('siem-format'), enabled: document.getElementById('siem-enabled').checked,
+    }) });
+    document.getElementById('siem-alert').innerHTML = '<div class="alert alert-success">SIEM configuration saved.</div>';
+  } catch (e) {
+    document.getElementById('siem-alert').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+async function deleteSiem() {
+  await api('/integrations/siem', { method: 'DELETE' });
+  navigate('integrations');
+}
+
+/* ── Export ── */
+function renderExport(c) {
+  // BUG FIX: Export buttons now use proper auth (Bearer token in URL via fetch + blob download)
+  c.innerHTML = `
+    <h1 class="page-title">Export</h1>
+    <div class="card">
+      <p style="color:var(--text-muted);margin-bottom:1rem">Download your HDP data as JSON files.</p>
+      <div class="actions" style="flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="doExport('tokens')">Export Tokens</button>
+        <button class="btn btn-primary" onclick="doExport('policies')">Export Policies</button>
+        <button class="btn btn-primary" onclick="doExport('principals')">Export Principals</button>
+        <button class="btn btn-primary" onclick="doExport('audit')">Export Audit Log</button>
+      </div>
+      <div id="export-alert" style="margin-top:1rem"></div>
+    </div>`;
+}
+
+async function doExport(type) {
+  try {
+    const res = await fetch('/api/export/' + type, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `hdp-${type}-export.json`; a.click();
+    URL.revokeObjectURL(url);
+    document.getElementById('export-alert').innerHTML = '<div class="alert alert-success">Export downloaded.</div>';
+  } catch (e) {
+    document.getElementById('export-alert').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+/* ── Settings (Password) ── */
+function renderSettings(c) {
+  c.innerHTML = `
+    <h1 class="page-title">Settings</h1>
+    <div class="card">
+      <h3 style="margin-bottom:1rem">Change Password</h3>
+      <div class="form-row"><label>Current Password</label><input id="pw-current" type="password"></div>
+      <div class="form-row"><label>New Password</label><input id="pw-new" type="password"></div>
+      <div class="form-row"><label>Confirm New Password</label><input id="pw-confirm" type="password"></div>
+      <div id="pw-alert"></div>
+      <div class="actions"><button class="btn btn-primary" onclick="changePassword()">Update Password</button></div>
+    </div>`;
+}
+
+async function changePassword() {
+  const newPw = val('pw-new');
+  if (newPw !== val('pw-confirm')) {
+    document.getElementById('pw-alert').innerHTML = '<div class="alert alert-error">Passwords do not match.</div>';
+    return;
+  }
+  try {
+    await api('/auth/password', { method: 'PUT', body: JSON.stringify({ currentPassword: val('pw-current'), newPassword: newPw }) });
+    document.getElementById('pw-alert').innerHTML = '<div class="alert alert-success">Password updated successfully.</div>';
+    document.getElementById('pw-current').value = '';
+    document.getElementById('pw-new').value = '';
+    document.getElementById('pw-confirm').value = '';
+  } catch (e) {
+    document.getElementById('pw-alert').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+/* ── Helpers ── */
+function val(id) { return document.getElementById(id)?.value || ''; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+function showModal(title, body, onSubmit, submitLabel) {
+  document.getElementById('modal-container').innerHTML = `
+    <div class="modal-backdrop" onclick="if(event.target===this)closeModal()">
+      <div class="modal">
+        <h3>${title}</h3>
+        ${body}
+        <div class="actions" style="margin-top:1rem">
+          <button class="btn btn-primary" id="modal-submit">${submitLabel || 'Create'}</button>
+          <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('modal-submit').onclick = async () => {
+    try { const r = await onSubmit(); if (r === false) return; } catch(e) {
+      const el = document.querySelector('.modal');
+      if (el) { const a = document.createElement('div'); a.className = 'alert alert-error'; a.textContent = e.message; el.prepend(a); }
+    }
+  };
+}
+
+function closeModal() { document.getElementById('modal-container').innerHTML = ''; }
+</script>
+</body>
+</html>

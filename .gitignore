@@ -13,3 +13,5 @@ docs/superpowers/
 .superpowers/
 .DS_Store
 .worktrees/
+apps/platform/node_modules/
+apps/platform/dist/
