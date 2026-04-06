@@ -55,7 +55,7 @@ import requests as _requests
 
 # ── Demo / scripted mode ──────────────────────────────────────────────────────
 # Set SCRIPTED_MODE=0 as a Space secret/env var to re-enable live Gemma.
-_SCRIPTED = os.environ.get("SCRIPTED_MODE", "1") != "0"
+_SCRIPTED = os.environ.get("SCRIPTED_MODE", "0") != "0"
 
 _GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
