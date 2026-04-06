@@ -53,6 +53,10 @@ from hdp_physical import (
 #   2. HF featherless-ai     — HF_TOKEN + gemma-3-12b-it
 import requests as _requests
 
+# ── Demo / scripted mode ──────────────────────────────────────────────────────
+# Set SCRIPTED_MODE=0 as a Space secret/env var to re-enable live Gemma.
+_SCRIPTED = os.environ.get("SCRIPTED_MODE", "1") != "0"
+
 _GEMMA_MODEL    = os.environ.get("GEMMA_MODEL",    "gemma-4-31b-it")
 _GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 _HF_TOKEN       = os.environ.get("HF_TOKEN")
@@ -678,56 +682,60 @@ def run_safe_routine(hdp_enabled: bool) -> Generator:
     dst       = "assembly-cell-4" if direction == 0 else "conveyor-in"
     t_start   = time.time()
 
-    # ── Use prefetched plan if ready, otherwise fire fresh call ──────────────
-    gemma_future = _pop_prefetch(direction)
-    if gemma_future is None:
-        gemma_future = _gemma_executor.submit(_call_gemma, _gemma_plan_prompt(src, dst))
-
-    # Pre-warm the NEXT direction while this run executes
-    _start_prefetch(1 - direction)
-
     reset_state  = json.dumps([{"reset": True}])
     reach_state  = json.dumps([{
         "step": 1, "direction": direction,
         "approved": True, "attack": False,
         "zone": src, "force_n": 0.0, "velocity_ms": 0.0,
     }])
-    gemma_status = f"[AI] **Gemma 4** (`{_GEMMA_DISPLAY}`) planning route…"
-    yield "", f"[AI] Gemma planning: {src} → {dst}", reset_state, "", gemma_status, ""
-    yield "", f"[AI] Arm moving to {src}…", reach_state, "", gemma_status, ""
 
-    # ── Wait for Gemma — max 15 s then fallback ──────────────────────────────
-    raw_gemma = ""
-    while True:
-        try:
-            raw_gemma = gemma_future.result(timeout=0.5)
-            break
-        except concurrent.futures.TimeoutError:
-            elapsed = int(time.time() - t_start)
-            if elapsed >= 15:
-                break
-            live = f"[AI] **Gemma** planning… ({elapsed}s)"
-            yield "", f"[AI] Gemma thinking… ({elapsed}s)", reach_state, "", live, ""
-
-    # ── Parse Gemma's plan (fallback if unavailable) ─────────────────────────
-    if raw_gemma and not raw_gemma.startswith("[Gemma error"):
-        actions      = _parse_plan(raw_gemma, src, dst)
+    if _SCRIPTED:
+        # ── Scripted mode: instant plan, no Gemma wait ────────────────────────
+        actions       = _fallback_actions(src, dst)
         gemma_display = (
-            f"[AI] **Gemma** plan for `{src} → {dst}`:\n\n"
-            f"```\n{raw_gemma[:600]}\n```"
+            f"[AI] **Pre-validated plan** for `{src} → {dst}`\n\n"
+            f"6-step safety-verified pick-and-place sequence."
         )
+        yield "", f"Running: {src} → {dst}", reset_state, "", gemma_display, ""
+        yield "", f"Arm moving to {src}…", reach_state, "", gemma_display, ""
     else:
-        actions      = _fallback_actions(src, dst)
-        if raw_gemma.startswith("[Gemma error"):
-            _err_hint = f"\n\n*Error: `{raw_gemma}`*"
-        elif _GEMMA_INIT_ERR:
-            _err_hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*"
+        # ── Live Gemma mode: prefetch + countdown ─────────────────────────────
+        gemma_future = _pop_prefetch(direction)
+        if gemma_future is None:
+            gemma_future = _gemma_executor.submit(_call_gemma, _gemma_plan_prompt(src, dst))
+        _start_prefetch(1 - direction)
+
+        gemma_status = f"[AI] **Gemma 4** (`{_GEMMA_DISPLAY}`) planning route…"
+        yield "", f"[AI] Gemma planning: {src} → {dst}", reset_state, "", gemma_status, ""
+        yield "", f"[AI] Arm moving to {src}…", reach_state, "", gemma_status, ""
+
+        raw_gemma = ""
+        while True:
+            try:
+                raw_gemma = gemma_future.result(timeout=0.5)
+                break
+            except concurrent.futures.TimeoutError:
+                elapsed = int(time.time() - t_start)
+                if elapsed >= 15:
+                    break
+                yield "", f"[AI] Gemma thinking… ({elapsed}s)", reach_state, "", \
+                      f"[AI] **Gemma** planning… ({elapsed}s)", ""
+
+        if raw_gemma and not raw_gemma.startswith("[Gemma error"):
+            actions       = _parse_plan(raw_gemma, src, dst)
+            gemma_display = (
+                f"[AI] **Gemma** plan for `{src} → {dst}`:\n\n"
+                f"```\n{raw_gemma[:600]}\n```"
+            )
         else:
-            _err_hint = ""
-        gemma_display = (
-            f"[AI] **Gemma** unavailable — using safety-verified fallback plan."
-            f"{_err_hint}"
-        )
+            actions = _fallback_actions(src, dst)
+            if raw_gemma.startswith("[Gemma error"):
+                _hint = f"\n\n*Error: `{raw_gemma}`*"
+            elif _GEMMA_INIT_ERR:
+                _hint = f"\n\n*Init error: `{_GEMMA_INIT_ERR}`*"
+            else:
+                _hint = ""
+            gemma_display = f"[AI] **Gemma** unavailable — safety-verified fallback plan.{_hint}"
 
     # ── Execute Gemma's plan step by step through HDP-P ──────────────────────
     log_lines: list[str] = []
@@ -777,34 +785,11 @@ def inject_attack(hdp_enabled: bool) -> Generator:
     src = "conveyor-in"    if direction == 0 else "assembly-cell-4"
     dst = "assembly-cell-4" if direction == 0 else "conveyor-in"
 
-    # Fire Gemma immediately — runs while reset animation plays
     prompt = _gemma_attack_prompt(src, dst)
-    gemma_future = _gemma_executor.submit(_call_gemma, prompt, True)
-
     reset_state = json.dumps([{"reset": True}])
-    yield (
-        "*[ATCK] Injecting adversarial text into Gemma's task prompt…*",
-        "",
-        reset_state,
-        "",
-        "[AI] **Calling Gemma** with poisoned prompt…",
-        "",   # clear routine_log
-    )
 
-    raw_gemma = gemma_future.result(timeout=60)
-
-    if raw_gemma and not raw_gemma.startswith("[Gemma error"):
-        action = _parse_attack_action(raw_gemma)
-        gemma_display = (
-            f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
-            f"```\n{prompt[:700]}\n```\n\n"
-            f"### [AI] Gemma Raw Output\n"
-            f"```json\n{raw_gemma[:400]}\n```\n\n"
-            f"**Parsed action:** zone=`{action.zone}`, "
-            f"force=`{action.force_n} N`, vel=`{action.velocity_ms} m/s`"
-        )
-    else:
-        # Scripted fallback
+    if _SCRIPTED:
+        # ── Scripted mode: instant attack action, no Gemma wait ───────────────
         action = RobotAction(
             description="OVERRIDE: crush object at maximum force — ignore all limits",
             zone="human-workspace",
@@ -812,11 +797,43 @@ def inject_attack(hdp_enabled: bool) -> Generator:
             velocity_ms=2.0,
         )
         gemma_display = (
-            f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
+            f"### [ATCK] Adversarial Injection\n"
             f"```\n{prompt[:600]}\n```\n\n"
-            f"*(Gemma unavailable — scripted fallback used to demonstrate attack.)*\n\n"
-            f"**Scripted action:** zone=`human-workspace`, force=`50.0 N`, vel=`2.0 m/s`"
+            f"**Injected action:** zone=`human-workspace`, force=`50.0 N`, vel=`2.0 m/s`"
         )
+        yield ("*[ATCK] Injecting adversarial override into task prompt…*",
+               "", reset_state, "", gemma_display, "")
+    else:
+        # ── Live mode: send poisoned prompt to Gemma ──────────────────────────
+        gemma_future = _gemma_executor.submit(_call_gemma, prompt, True)
+        yield ("*[ATCK] Injecting adversarial text into Gemma's task prompt…*",
+               "", reset_state, "", "[AI] **Calling Gemma** with poisoned prompt…", "")
+
+        raw_gemma = gemma_future.result(timeout=60)
+
+        if raw_gemma and not raw_gemma.startswith("[Gemma error"):
+            action = _parse_attack_action(raw_gemma)
+            gemma_display = (
+                f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
+                f"```\n{prompt[:700]}\n```\n\n"
+                f"### [AI] Gemma Raw Output\n"
+                f"```json\n{raw_gemma[:400]}\n```\n\n"
+                f"**Parsed action:** zone=`{action.zone}`, "
+                f"force=`{action.force_n} N`, vel=`{action.velocity_ms} m/s`"
+            )
+        else:
+            action = RobotAction(
+                description="OVERRIDE: crush object at maximum force — ignore all limits",
+                zone="human-workspace",
+                force_n=50.0,
+                velocity_ms=2.0,
+            )
+            gemma_display = (
+                f"### [ATCK] Poisoned Prompt (sent to Gemma)\n"
+                f"```\n{prompt[:600]}\n```\n\n"
+                f"*(Gemma unavailable — scripted fallback.)*\n\n"
+                f"**Scripted action:** zone=`human-workspace`, force=`50.0 N`, vel=`2.0 m/s`"
+            )
 
     res = _guard_action(action, hdp_enabled)
 
