@@ -1,0 +1,44 @@
+name: Deploy HF Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/hdp-physical-hf/**'
+
+jobs:
+  deploy:
+    name: Sync to helixar-ai/hdp-physical-demo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Push to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "ci@helixar.ai"
+          git config --global user.name "Helixar AI"
+
+          # Clone the Space
+          git clone "https://user:${HF_TOKEN}@huggingface.co/spaces/helixar-ai/hdp-physical-demo" /tmp/hf-space
+
+          # Sync app files (overwrite)
+          cp apps/hdp-physical-hf/app.py          /tmp/hf-space/app.py
+          cp apps/hdp-physical-hf/requirements.txt /tmp/hf-space/requirements.txt
+          cp apps/hdp-physical-hf/README.md        /tmp/hf-space/README.md
+
+          # Commit and push only if there are changes
+          cd /tmp/hf-space
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to push."
+          else
+            git commit -m "chore: sync from main (${GITHUB_SHA::7})"
+            git push origin main
+          fi

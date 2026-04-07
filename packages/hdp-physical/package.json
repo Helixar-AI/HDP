@@ -1,0 +1,38 @@
+{
+  "name": "@helixar_ai/hdp-physical",
+  "version": "0.1.0",
+  "description": "HDP-P — Embodied Delegation Tokens and pre-execution safety for physical AI agents",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@helixar_ai/hdp": "file:../..",
+    "@noble/ed25519": "^2.2.3",
+    "@noble/hashes": "^1.7.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "tsup": "^8.5.1",
+    "vitest": "^4.1.1",
+    "@types/node": "^25.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Helixar-AI/HDP.git",
+    "directory": "packages/hdp-physical"
+  },
+  "license": "CC-BY-4.0"
+}

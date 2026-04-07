@@ -7,6 +7,9 @@ on:
       - 'python/v*'
       - 'python/hdp-grok/v*'
       - 'python/hdp-autogen/v*'
+      - 'python/hdp-physical/v*'
+      - 'node/hdp-autogen/v*'
+      - 'node/hdp-physical/v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -275,6 +278,110 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── hdp-autogen-ts independent pipeline ───────────────────────────────────
+
+  test-hdp-autogen-ts:
+    name: Test hdp-autogen-ts
+    if: startsWith(github.ref, 'refs/tags/node/hdp-autogen/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  vet-hdp-autogen-ts:
+    name: Build & Vet hdp-autogen-ts (ReleaseGuard)
+    needs: test-hdp-autogen-ts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build
+
+      - name: Build hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm run build
+
+      - name: Copy LICENSE into dist directory
+        run: cp LICENSE packages/hdp-autogen-ts/dist/
+
+      - name: Vet @helixar_ai/hdp-autogen
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-autogen-ts/dist
+          config: .releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-autogen-ts
+
+      - name: Upload vetted hdp-autogen-ts dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-autogen-ts-dist
+          path: packages/hdp-autogen-ts/dist/
+          retention-days: 1
+
+  publish-hdp-autogen-ts-standalone:
+    name: Publish @helixar_ai/hdp-autogen (standalone)
+    needs: vet-hdp-autogen-ts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
+
+      - name: Download vetted hdp-autogen-ts dist
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-autogen-ts-dist
+          path: packages/hdp-autogen-ts/dist/
+
+      - name: Publish @helixar_ai/hdp-autogen
+        run: cd packages/hdp-autogen-ts && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   # ── Python pipeline ───────────────────────────────────────────────────────
 
   test-python:
@@ -505,6 +612,197 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hdp-autogen-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── hdp-physical (TypeScript) ─────────────────────────────────────────────
+
+  test-hdp-physical:
+    name: Test hdp-physical
+    if: startsWith(github.ref, 'refs/tags/node/hdp-physical/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+  vet-hdp-physical:
+    name: Build & Vet hdp-physical (ReleaseGuard)
+    needs: test-hdp-physical
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
+
+      - name: Build hdp-physical
+        run: cd packages/hdp-physical && npm run build
+
+      - name: Copy LICENSE into dist directory
+        run: cp LICENSE packages/hdp-physical/dist/
+
+      - name: Vet @helixar_ai/hdp-physical
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-physical/dist
+          config: .releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-physical
+
+      - name: Upload vetted hdp-physical dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-physical-dist
+          path: packages/hdp-physical/dist/
+          retention-days: 1
+
+  publish-hdp-physical:
+    name: Publish @helixar_ai/hdp-physical
+    needs: vet-hdp-physical
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build root package (peer dependency)
+        run: npm run build
+
+      - name: Download vetted hdp-physical dist
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-physical-dist
+          path: packages/hdp-physical/dist/
+
+      - name: Publish @helixar_ai/hdp-physical
+        run: cd packages/hdp-physical && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── hdp-physical (Python) ─────────────────────────────────────────────────
+
+  test-hdp-physical-py:
+    name: Test hdp-physical Python SDK
+    if: startsWith(github.ref, 'refs/tags/python/hdp-physical/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-physical-py
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-physical-py
+        run: pytest tests/ -v
+
+  vet-hdp-physical-py:
+    name: Build & Vet hdp-physical Python (ReleaseGuard)
+    needs: test-hdp-physical-py
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-physical-py
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-physical-py/dist
+          config: packages/hdp-physical-py/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-physical-py
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-physical-py-dist
+          path: packages/hdp-physical-py/dist/
+          retention-days: 1
+
+  publish-hdp-physical-py:
+    name: Publish hdp-physical to PyPI
+    needs: vet-hdp-physical-py
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-hdp-physical
+      url: https://pypi.org/project/hdp-physical/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-physical-py-dist
           path: dist/
 
       - name: Publish to PyPI
