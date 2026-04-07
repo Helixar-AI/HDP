@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hdp-langchain"
+version = "0.1.0"
+description = "HDP (Human Delegation Provenance) middleware for LangChain — cryptographic audit trail for multi-agent delegation"
+readme = "README.md"
+license = { text = "CC-BY-4.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.2.0",
+    "cryptography>=42.0.0",
+    "jcs>=0.2.1",
+]
+
+[project.optional-dependencies]
+graph = [
+    "langgraph>=0.2.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "langchain-core>=0.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Helixar-AI/HDP"
+Repository = "https://github.com/Helixar-AI/HDP"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hdp_langchain"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -3,7 +3,7 @@
 # HDP — Human Delegation Provenance Protocol
 
 **A cryptographic chain-of-custody protocol for agentic AI systems.**
-*Every action an AI agent takes, traceable back to the human who authorized it.*
+_Every action an AI agent takes, traceable back to the human who authorized it._
 
 <img src="docs/assets/hdp.png" alt="HDP — Human Delegation Provenance Protocol" width="100%"/>
 
@@ -46,35 +46,46 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 
 ## Packages
 
-| Package | Registry | Language | Framework | Description |
-|---|---|---|---|---|
-| [`@helixar_ai/hdp`](./src) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp) | TypeScript | Any | Core SDK — issue, extend, verify HDP tokens |
-| [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp) | TypeScript | MCP | MCP middleware — attaches HDP to any MCP server |
-| [`hdp-crewai`](./packages/hdp-crewai) | [PyPI](https://pypi.org/project/hdp-crewai/) | Python | CrewAI | CrewAI middleware — attaches HDP to any crew |
-| [`hdp-grok`](./packages/hdp-grok) | [PyPI](https://pypi.org/project/hdp-grok/) | Python | Grok / xAI | Grok middleware — attaches HDP to any xAI conversation |
-| [`hdp-autogen`](./packages/hdp-autogen) | [PyPI](https://pypi.org/project/hdp-autogen/) | Python | AutoGen | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat |
-| [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows |
+| Package                                                | Registry                                                     | Language   | Framework             | Description                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------ | ---------- | --------------------- | -------------------------------------------------------------------------- |
+| [`@helixar_ai/hdp`](./src)                             | [npm](https://www.npmjs.com/package/@helixar_ai/hdp)         | TypeScript | Any                   | Core SDK — issue, extend, verify HDP tokens                                |
+| [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp)            | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp)     | TypeScript | MCP                   | MCP middleware — attaches HDP to any MCP server                            |
+| [`hdp-crewai`](./packages/hdp-crewai)                  | [PyPI](https://pypi.org/project/hdp-crewai/)                 | Python     | CrewAI                | CrewAI middleware — attaches HDP to any crew                               |
+| [`hdp-grok`](./packages/hdp-grok)                      | [PyPI](https://pypi.org/project/hdp-grok/)                   | Python     | Grok / xAI            | Grok middleware — attaches HDP to any xAI conversation                     |
+| [`hdp-autogen`](./packages/hdp-autogen)                | [PyPI](https://pypi.org/project/hdp-autogen/)                | Python     | AutoGen               | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat        |
+| [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen               | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows     |
+| [`hdp-langchain`](./packages/hdp-langchain)            | [PyPI](https://pypi.org/project/hdp-langchain/)              | Python     | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
 
 ## Install
 
 **TypeScript / Node.js**
+
 ```bash
 npm install @helixar_ai/hdp
 ```
 
 **Python / CrewAI**
+
 ```bash
 pip install hdp-crewai
 ```
 
 **Python / Grok (xAI API)**
+
 ```bash
 pip install hdp-grok
 ```
 
 **Python / AutoGen**
+
 ```bash
 pip install hdp-autogen
+```
+
+**Python / LangChain**
+
+```bash
+pip install hdp-langchain
 ```
 
 ---
@@ -84,55 +95,68 @@ pip install hdp-autogen
 Issue a root token, extend it through a delegation chain, verify it offline. Under 2 minutes.
 
 ```typescript
-import { generateKeyPair, issueToken, extendChain, verifyToken } from '@helixar_ai/hdp'
+import {
+  generateKeyPair,
+  issueToken,
+  extendChain,
+  verifyToken,
+} from "@helixar_ai/hdp";
 
 // 1. Generate a key pair for the issuer
-const { privateKey, publicKey } = await generateKeyPair()
+const { privateKey, publicKey } = await generateKeyPair();
 
 // 2. Issue a token (the human authorization event)
 let token = await issueToken({
-  sessionId: 'sess-20260326-abc123',
+  sessionId: "sess-20260326-abc123",
   principal: {
-    id: 'usr_alice_opaque',
-    id_type: 'opaque',
-    display_name: 'Alice Chen',
+    id: "usr_alice_opaque",
+    id_type: "opaque",
+    display_name: "Alice Chen",
   },
   scope: {
-    intent: 'Analyze Q1 sales data and generate a summary report.',
-    authorized_tools: ['database_read', 'file_write'],
-    authorized_resources: ['db://sales/q1-2026'],
-    data_classification: 'confidential',
+    intent: "Analyze Q1 sales data and generate a summary report.",
+    authorized_tools: ["database_read", "file_write"],
+    authorized_resources: ["db://sales/q1-2026"],
+    data_classification: "confidential",
     network_egress: false,
     persistence: true,
     max_hops: 3,
   },
   signingKey: privateKey,
-  keyId: 'alice-signing-key-v1',
-})
+  keyId: "alice-signing-key-v1",
+});
 
 // 3. Extend the chain as the task delegates to agents
-token = await extendChain(token, {
-  agent_id: 'orchestrator-v2',
-  agent_type: 'orchestrator',
-  action_summary: 'Decompose analysis task and delegate to sub-agents.',
-  parent_hop: 0,
-}, privateKey)
+token = await extendChain(
+  token,
+  {
+    agent_id: "orchestrator-v2",
+    agent_type: "orchestrator",
+    action_summary: "Decompose analysis task and delegate to sub-agents.",
+    parent_hop: 0,
+  },
+  privateKey,
+);
 
-token = await extendChain(token, {
-  agent_id: 'sql-agent-v1',
-  agent_type: 'sub-agent',
-  action_summary: 'Execute read query against sales database.',
-  parent_hop: 1,
-}, privateKey)
+token = await extendChain(
+  token,
+  {
+    agent_id: "sql-agent-v1",
+    agent_type: "sub-agent",
+    action_summary: "Execute read query against sales database.",
+    parent_hop: 1,
+  },
+  privateKey,
+);
 
 // 4. Verify at any point in the chain — fully offline, no network call
 const result = await verifyToken(token, {
   publicKey,
-  currentSessionId: 'sess-20260326-abc123',
-})
+  currentSessionId: "sess-20260326-abc123",
+});
 
-console.log(result.valid)        // true
-console.log(token.chain.length)  // 2
+console.log(result.valid); // true
+console.log(token.chain.length); // 2
 ```
 
 ---
@@ -191,11 +215,11 @@ print(middleware)  # HdpMiddleware(session_id='...', hops=2, valid=True)
 
 ### Three HDP tools Grok can call
 
-| Tool | Required args | What it does |
-|---|---|---|
-| `hdp_issue_token` | — | Signs a root token for the session and principal |
-| `hdp_extend_chain` | `delegatee_id` | Appends a signed delegation hop (e.g. to a sub-agent) |
-| `hdp_verify_token` | `token` | Verifies the full chain using the middleware's public key |
+| Tool               | Required args  | What it does                                              |
+| ------------------ | -------------- | --------------------------------------------------------- |
+| `hdp_issue_token`  | —              | Signs a root token for the session and principal          |
+| `hdp_extend_chain` | `delegatee_id` | Appends a signed delegation hop (e.g. to a sub-agent)     |
+| `hdp_verify_token` | `token`        | Verifies the full chain using the middleware's public key |
 
 ### What `HdpMiddleware` manages for you
 
@@ -240,13 +264,13 @@ result = verify_chain(middleware.export_token(), private_key.public_key())
 print(result.valid, result.hop_count, result.violations)
 ```
 
-| # | Consideration | Behaviour |
-|---|---|---|
-| 1 | **Scope enforcement** | `step_callback` checks every tool call against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
-| 2 | **Delegation depth** | `max_hops` is enforced per run; hops beyond the limit are skipped and warned. |
-| 3 | **Token size / perf** | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt the crew. |
-| 4 | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. |
-| 5 | **Memory integration** | Signed token is persisted to CrewAI's storage directory for retroactive auditing. |
+| #   | Consideration          | Behaviour                                                                                                                                                      |
+| --- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Scope enforcement**  | `step_callback` checks every tool call against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
+| 2   | **Delegation depth**   | `max_hops` is enforced per run; hops beyond the limit are skipped and warned.                                                                                  |
+| 3   | **Token size / perf**  | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt the crew.                                                                   |
+| 4   | **Verification**       | `verify_chain(token, public_key)` validates root + every hop offline.                                                                                          |
+| 5   | **Memory integration** | Signed token is persisted to CrewAI's storage directory for retroactive auditing.                                                                              |
 
 → [Full CrewAI integration docs](./packages/hdp-crewai/README.md)
 
@@ -287,13 +311,13 @@ result = verify_chain(middleware.export_token(), private_key.public_key())
 print(result.valid, result.hop_count, result.violations)
 ```
 
-| # | Consideration | Behaviour |
-|---|---|---|
-| 1 | **Scope enforcement** | Incoming messages are inspected for tool calls against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
-| 2 | **Delegation depth** | `max_hops` is enforced per conversation; hops beyond the limit are skipped and warned. |
-| 3 | **Token size / perf** | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt agents. |
-| 4 | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. |
-| 5 | **GroupChat integration** | `configure()` detects `ConversableAgent` vs `GroupChatManager` and attaches the appropriate hooks automatically. |
+| #   | Consideration             | Behaviour                                                                                                                                                              |
+| --- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Scope enforcement**     | Incoming messages are inspected for tool calls against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
+| 2   | **Delegation depth**      | `max_hops` is enforced per conversation; hops beyond the limit are skipped and warned.                                                                                 |
+| 3   | **Token size / perf**     | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt agents.                                                                             |
+| 4   | **Verification**          | `verify_chain(token, public_key)` validates root + every hop offline.                                                                                                  |
+| 5   | **GroupChat integration** | `configure()` detects `ConversableAgent` vs `GroupChatManager` and attaches the appropriate hooks automatically.                                                       |
 
 → [Full AutoGen integration docs](./packages/hdp-autogen/README.md)
 
@@ -304,30 +328,30 @@ print(result.valid, result.hop_count, result.violations)
 HDP ships a `KeyRegistry` for `kid → publicKey` resolution and a well-known endpoint format for automated key distribution.
 
 ```typescript
-import { KeyRegistry, generateKeyPair, exportPublicKey } from '@helixar_ai/hdp'
+import { KeyRegistry, generateKeyPair, exportPublicKey } from "@helixar_ai/hdp";
 
-const registry = new KeyRegistry()
+const registry = new KeyRegistry();
 
-const { privateKey, publicKey } = await generateKeyPair()
-registry.register('signing-key-v1', publicKey)
+const { privateKey, publicKey } = await generateKeyPair();
+registry.register("signing-key-v1", publicKey);
 
 // Resolve a key before verification
-const key = registry.resolve(token.signature.kid)  // Uint8Array | null
+const key = registry.resolve(token.signature.kid); // Uint8Array | null
 
 // Rotate: revoke old, register new
-registry.revoke('signing-key-v1')
-registry.register('signing-key-v2', newPublicKey)
+registry.revoke("signing-key-v1");
+registry.register("signing-key-v2", newPublicKey);
 
 // Export for /.well-known/hdp-keys.json
-const doc = registry.exportWellKnown()
+const doc = registry.exportWellKnown();
 // → { keys: [{ kid, alg: 'Ed25519', pub: '<base64url>' }] }
 ```
 
-| Environment | Recommended storage |
-|---|---|
-| Development | In-memory `KeyRegistry`, keys generated per-process |
-| Staging | Environment variables via secrets manager |
-| Production | HSM or cloud KMS (AWS KMS, GCP Cloud HSM, Azure Key Vault) |
+| Environment       | Recommended storage                                        |
+| ----------------- | ---------------------------------------------------------- |
+| Development       | In-memory `KeyRegistry`, keys generated per-process        |
+| Staging           | Environment variables via secrets manager                  |
+| Production        | HSM or cloud KMS (AWS KMS, GCP Cloud HSM, Azure Key Vault) |
 | Edge / serverless | Pre-distributed public keys; private key in secure enclave |
 
 **Key rotation:** Issue new tokens with a new `kid` while keeping the old key in the verifier registry until all tokens signed with it have expired.
@@ -343,14 +367,14 @@ HDP verification requires **zero network calls**. The complete trust state is:
 - The current time (for expiry check)
 
 ```typescript
-import { verifyToken } from '@helixar_ai/hdp'
+import { verifyToken } from "@helixar_ai/hdp";
 
 // Works in air-gapped environments, edge runtimes, or any context
 // where a network call before every agent action is unacceptable.
 const result = await verifyToken(token, {
-  publicKey,                               // locally held — no fetch
-  currentSessionId: 'sess-20260326-abc',  // locally known — no registry
-})
+  publicKey, // locally held — no fetch
+  currentSessionId: "sess-20260326-abc", // locally known — no registry
+});
 ```
 
 This is architecturally enforced: the 7-step verification pipeline has no I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`) which intercepts all network calls and asserts none are made during verification.
@@ -362,27 +386,27 @@ This is architecturally enforced: the 7-step verification pipeline has no I/O op
 Long-running tasks may exhaust `max_hops`, expand their scope, or require fresh human confirmation mid-session. Issue a re-authorization token rather than modifying the original.
 
 ```typescript
-import { issueReAuthToken } from '@helixar_ai/hdp'
+import { issueReAuthToken } from "@helixar_ai/hdp";
 
 const reAuth = await issueReAuthToken({
   original: exhaustedToken,
   scope: {
     ...exhaustedToken.scope,
-    intent: 'Continue analysis: generate charts from extracted data.',
+    intent: "Continue analysis: generate charts from extracted data.",
     max_hops: 3,
   },
   signingKey: privateKey,
-  keyId: 'signing-key-v1',
-})
+  keyId: "signing-key-v1",
+});
 // reAuth.header.parent_token_id === exhaustedToken.header.token_id
 ```
 
-| Session type | Recommended `expiresInMs` |
-|---|---|
-| Short interactive task | 15–60 minutes |
-| Background batch job | 4–8 hours |
-| Default | 24 hours |
-| High-risk / elevated scope | 5–15 minutes |
+| Session type               | Recommended `expiresInMs` |
+| -------------------------- | ------------------------- |
+| Short interactive task     | 15–60 minutes             |
+| Background batch job       | 4–8 hours                 |
+| Default                    | 24 hours                  |
+| High-risk / elevated scope | 5–15 minutes              |
 
 ---
 
@@ -410,11 +434,11 @@ const result = await verifyPrincipalChain(
 ## Privacy Utilities
 
 ```typescript
-import { stripPrincipal, redactPii, buildAuditSafe } from '@helixar_ai/hdp'
+import { stripPrincipal, redactPii, buildAuditSafe } from "@helixar_ai/hdp";
 
-const safeForTransmission = stripPrincipal(token)   // remove all principal PII
-const anonymized = redactPii(token)                  // principal.id → '[REDACTED]'
-const auditEntry = buildAuditSafe(token)             // token_id + intent + chain summary
+const safeForTransmission = stripPrincipal(token); // remove all principal PII
+const anonymized = redactPii(token); // principal.id → '[REDACTED]'
+const auditEntry = buildAuditSafe(token); // token_id + intent + chain summary
 ```
 
 ---
