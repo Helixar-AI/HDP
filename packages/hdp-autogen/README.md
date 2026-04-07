@@ -168,6 +168,26 @@ const result = verifyChain(JSON.parse(tokenJson), publicKey);
 
 ---
 
+## Releasing
+
+Published to [PyPI](https://pypi.org/project/hdp-autogen/) via GitHub Actions when a matching tag is pushed:
+
+```bash
+git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
+```
+
+Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` ([ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard)) → `publish-hdp-autogen`
+
+| Detail | Value |
+|---|---|
+| **PyPI project** | [`hdp-autogen`](https://pypi.org/project/hdp-autogen/) |
+| **Tag pattern** | `python/hdp-autogen/v*` |
+| **Workflow** | `.github/workflows/release.yml` |
+| **Auth** | OIDC trusted publisher (no token needed) |
+| **Environment** | `pypi-hdp-autogen` |
+
+---
+
 ## Spec
 
 Human Delegation Provenance (HDP) is an IETF draft:
