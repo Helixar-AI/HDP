@@ -6,6 +6,7 @@ on:
       - 'v*'
       - 'python/v*'
       - 'python/hdp-grok/v*'
+      - 'python/hdp-langchain/v*'
       - 'python/hdp-autogen/v*'
       - 'python/hdp-physical/v*'
       - 'node/hdp-autogen/v*'
@@ -13,6 +14,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
 
 jobs:
   # ── Node.js pipeline ──────────────────────────────────────────────────────
@@ -532,6 +536,89 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hdp-grok-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── hdp-langchain (Python / LangChain) ───────────────────────────────────
+
+  test-hdp-langchain:
+    name: Test hdp-langchain
+    if: startsWith(github.ref, 'refs/tags/python/hdp-langchain/v')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-langchain
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-langchain
+        run: pytest tests/ -v
+
+  vet-hdp-langchain:
+    name: Build & Vet hdp-langchain (ReleaseGuard)
+    needs: test-hdp-langchain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-langchain
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-langchain/dist
+          config: packages/hdp-langchain/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-langchain
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-langchain-dist
+          path: packages/hdp-langchain/dist/
+          retention-days: 1
+
+  publish-hdp-langchain:
+    name: Publish hdp-langchain to PyPI
+    needs: vet-hdp-langchain
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-hdp-langchain
+      url: https://pypi.org/project/hdp-langchain/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-langchain-dist
           path: dist/
 
       - name: Publish to PyPI
