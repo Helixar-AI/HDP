@@ -136,6 +136,23 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-langchain
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-langchain
+        run: pytest tests/ -v
+
   test-hdp-physical-py:
     name: Test hdp-physical-py (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -153,11 +170,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        working-directory: packages/hdp-langchain
-        run: pip install -e ".[dev]"
-
-      - name: Run tests
-        working-directory: packages/hdp-langchain
         working-directory: packages/hdp-physical-py
         run: pip install -e ".[dev]"
 
