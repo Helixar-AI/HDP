@@ -640,9 +640,7 @@ Full protocol specification: [https://helixar.ai/about/labs/hdp/](https://helixa
 
 ## Citation
 
-If you use HDP in your research, please cite the peer-reviewed paper and/or the protocol specification:
-
-**Research paper (arXiv)**
+If you use HDP in your research, please cite:
 
 ```bibtex
 @misc{dalugoda2026hdp,
@@ -655,19 +653,6 @@ If you use HDP in your research, please cite the peer-reviewed paper and/or the 
   archivePrefix = {arXiv},
   primaryClass = {cs.CR},
   url          = {https://arxiv.org/abs/2604.04522},
-}
-```
-
-**Protocol specification (Zenodo)**
-
-```bibtex
-@software{helixar2026hdpspec,
-  title     = {{HDP} — Human Delegation Provenance Protocol Specification},
-  author    = {{Helixar Limited}},
-  year      = {2026},
-  doi       = {10.5281/zenodo.19332023},
-  url       = {https://doi.org/10.5281/zenodo.19332023},
-  publisher = {Zenodo},
 }
 ```
 
