@@ -25,6 +25,7 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 [![AutoGen](https://img.shields.io/badge/AutoGen-integration-10b981?style=flat-square)](./packages/hdp-autogen)
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19332023-blue?style=flat-square)](https://doi.org/10.5281/zenodo.19332023)
+[![arXiv](https://img.shields.io/badge/arXiv-2604.04522-b31b1b?style=flat-square)](https://arxiv.org/abs/2604.04522)
 
 <br/>
 
@@ -639,10 +640,35 @@ Full protocol specification: [https://helixar.ai/about/labs/hdp/](https://helixa
 
 ## Citation
 
-If you use HDP in your research, please cite:
+If you use HDP in your research, please cite the peer-reviewed paper and/or the protocol specification:
 
+**Research paper (arXiv)**
+
+```bibtex
+@misc{dalugoda2026hdp,
+  title        = {{HDP}: A Lightweight Cryptographic Protocol for Human Delegation
+                  Provenance in Agentic {AI} Systems},
+  author       = {Dalugoda, Asiri},
+  year         = {2026},
+  month        = apr,
+  eprint       = {2604.04522},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.CR},
+  url          = {https://arxiv.org/abs/2604.04522},
+}
 ```
-https://doi.org/10.5281/zenodo.19332023
+
+**Protocol specification (Zenodo)**
+
+```bibtex
+@software{helixar2026hdpspec,
+  title     = {{HDP} — Human Delegation Provenance Protocol Specification},
+  author    = {{Helixar Limited}},
+  year      = {2026},
+  doi       = {10.5281/zenodo.19332023},
+  url       = {https://doi.org/10.5281/zenodo.19332023},
+  publisher = {Zenodo},
+}
 ```
 
 ---
