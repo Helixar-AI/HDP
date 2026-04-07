@@ -50,6 +50,8 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 | ------------------------------------------------------ | ------------------------------------------------------------ | ---------- | --------------------- | -------------------------------------------------------------------------- |
 | [`@helixar_ai/hdp`](./src)                             | [npm](https://www.npmjs.com/package/@helixar_ai/hdp)         | TypeScript | Any                   | Core SDK — issue, extend, verify HDP tokens                                |
 | [`@helixar_ai/hdp-mcp`](./packages/hdp-mcp)            | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-mcp)     | TypeScript | MCP                   | MCP middleware — attaches HDP to any MCP server                            |
+| [`@helixar_ai/hdp-physical`](./packages/hdp-physical)  | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-physical) | TypeScript | Physical AI / Robotics | HDP-P guardrails — signs EDTs and blocks unsafe robot actions pre-execution |
+| [`hdp-physical`](./packages/hdp-physical-py)           | [PyPI](https://pypi.org/project/hdp-physical/)               | Python     | Physical AI / Robotics | HDP-P guardrails — Python SDK for EDT issuance and pre-execution checks     |
 | [`hdp-crewai`](./packages/hdp-crewai)                  | [PyPI](https://pypi.org/project/hdp-crewai/)                 | Python     | CrewAI                | CrewAI middleware — attaches HDP to any crew                               |
 | [`hdp-grok`](./packages/hdp-grok)                      | [PyPI](https://pypi.org/project/hdp-grok/)                   | Python     | Grok / xAI            | Grok middleware — attaches HDP to any xAI conversation                     |
 | [`hdp-autogen`](./packages/hdp-autogen)                | [PyPI](https://pypi.org/project/hdp-autogen/)                | Python     | AutoGen               | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat        |
@@ -64,10 +66,22 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 npm install @helixar_ai/hdp
 ```
 
+**TypeScript / Physical AI**
+
+```bash
+npm install @helixar_ai/hdp-physical
+```
+
 **Python / CrewAI**
 
 ```bash
 pip install hdp-crewai
+```
+
+**Python / Physical AI**
+
+```bash
+pip install hdp-physical
 ```
 
 **Python / Grok (xAI API)**
@@ -158,6 +172,73 @@ const result = await verifyToken(token, {
 console.log(result.valid); // true
 console.log(token.chain.length); // 2
 ```
+
+---
+
+## Physical AI Integration
+
+`@helixar_ai/hdp-physical` and `hdp-physical` extend HDP into robotics with Embodied Delegation Tokens (EDTs) and a pre-execution guard. Before a motion command reaches an actuator, HDP-P verifies the EDT signature, checks the irreversibility ceiling, enforces excluded zones, and blocks actions that exceed force or velocity limits.
+
+```typescript
+import {
+  EdtBuilder,
+  IrreversibilityClass,
+  PreExecutionGuard,
+  signEdt,
+} from "@helixar_ai/hdp-physical";
+import { generateKeyPair } from "@helixar_ai/hdp";
+
+const { privateKey, publicKey } = await generateKeyPair();
+
+const edt = new EdtBuilder()
+  .setEmbodiment({
+    agent_type: "robot_arm",
+    platform_id: "aloha_v2",
+    workspace_scope: "zone_A",
+  })
+  .setActionScope({
+    permitted_actions: ["pick", "place", "move"],
+    excluded_zones: ["human_zone"],
+    max_force_n: 45,
+    max_velocity_ms: 0.5,
+  })
+  .setIrreversibility({
+    max_class: IrreversibilityClass.REVERSIBLE_WITH_EFFORT,
+    class2_requires_confirmation: true,
+    class3_prohibited: true,
+  })
+  .setPolicyAttestation({
+    policy_hash: "sha256-of-weights",
+    training_run_id: "run-1",
+    sim_validated: true,
+  })
+  .setDelegationScope({
+    allow_fleet_delegation: false,
+    max_delegation_depth: 1,
+    sub_agent_whitelist: [],
+  })
+  .build();
+
+const signedEdt = await signEdt(edt, privateKey, "robot-key-v1");
+const guard = new PreExecutionGuard();
+
+const decision = await guard.authorize(
+  {
+    description: "pick box from left bin",
+    force_n: 5,
+    velocity_ms: 0.2,
+  },
+  signedEdt,
+  publicKey,
+);
+
+console.log(decision.approved);
+```
+
+For Python, install `hdp-physical` and use the same EDT model and guard flow, with optional `lerobot` and `gemma` extras for adapters and interception.
+
+→ [Full TypeScript physical AI docs](./packages/hdp-physical/README.md)
+→ [Full Python physical AI docs](./packages/hdp-physical-py/README.md)
 
 ---
 
