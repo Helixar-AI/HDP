@@ -9,6 +9,8 @@ on:
       - 'python/hdp-langchain/v*'
       - 'python/hdp-autogen/v*'
       - 'python/hdp-physical/v*'
+      - 'python/llama-index-callbacks-hdp/v*'
+      - 'python/hdp-llamaindex/v*'
       - 'node/hdp-autogen/v*'
       - 'node/hdp-physical/v*'
 
@@ -706,6 +708,169 @@ jobs:
         with:
           packages-dir: dist/
           skip-existing: true
+
+  # ── llama-index-callbacks-hdp ─────────────────────────────────────────────
+
+  test-llama-index-callbacks-hdp:
+    name: Test llama-index-callbacks-hdp
+    if: startsWith(github.ref, 'refs/tags/python/llama-index-callbacks-hdp/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: packages/llama-index-callbacks-hdp
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/llama-index-callbacks-hdp
+        run: pytest tests/ -v
+
+  vet-llama-index-callbacks-hdp:
+    name: Build & Vet llama-index-callbacks-hdp (ReleaseGuard)
+    needs: test-llama-index-callbacks-hdp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/llama-index-callbacks-hdp
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/llama-index-callbacks-hdp/dist
+          config: packages/llama-index-callbacks-hdp/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-llama-index-callbacks-hdp
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-index-callbacks-hdp-dist
+          path: packages/llama-index-callbacks-hdp/dist/
+          retention-days: 1
+
+  publish-llama-index-callbacks-hdp:
+    name: Publish llama-index-callbacks-hdp to PyPI
+    needs: vet-llama-index-callbacks-hdp
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-llama-index-callbacks-hdp
+      url: https://pypi.org/project/llama-index-callbacks-hdp/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: llama-index-callbacks-hdp-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── hdp-llamaindex (metapackage) ───────────────────────────────────────────
+
+  test-hdp-llamaindex:
+    name: Test hdp-llamaindex
+    if: startsWith(github.ref, 'refs/tags/python/hdp-llamaindex/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install primary package
+        working-directory: packages/llama-index-callbacks-hdp
+        run: pip install -e ".[dev]"
+
+      - name: Install metapackage
+        working-directory: packages/hdp-llamaindex
+        run: pip install -e .
+
+      - name: Verify metapackage imports
+        run: python -c "from hdp_llamaindex import HdpCallbackHandler, HdpInstrumentationHandler, HdpNodePostprocessor, verify_chain; print('OK')"
+
+  vet-hdp-llamaindex:
+    name: Build & Vet hdp-llamaindex (ReleaseGuard)
+    needs: test-hdp-llamaindex
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-llamaindex
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-llamaindex/dist
+          config: packages/hdp-llamaindex/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-llamaindex
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-llamaindex-dist
+          path: packages/hdp-llamaindex/dist/
+          retention-days: 1
+
+  publish-hdp-llamaindex:
+    name: Publish hdp-llamaindex to PyPI
+    needs: vet-hdp-llamaindex
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-hdp-llamaindex
+      url: https://pypi.org/project/hdp-llamaindex/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-llamaindex-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
 
   # ── hdp-physical (TypeScript) ─────────────────────────────────────────────
 
