@@ -23,6 +23,9 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
 [![Grok / xAI](https://img.shields.io/badge/Grok%20%2F%20xAI-integration-000000?style=flat-square)](./packages/hdp-grok)
 [![AutoGen](https://img.shields.io/badge/AutoGen-integration-10b981?style=flat-square)](./packages/hdp-autogen)
+[![LangChain](https://img.shields.io/badge/LangChain-integration-1c7c4c?style=flat-square)](./packages/hdp-langchain)
+[![LlamaIndex](https://img.shields.io/badge/LlamaIndex-integration-7c3aed?style=flat-square)](./packages/llama-index-callbacks-hdp)
+[![PyPI llama-index-callbacks-hdp](https://img.shields.io/pypi/v/llama-index-callbacks-hdp?style=flat-square&logo=pypi&logoColor=white&color=7c3aed&label=llama-index-callbacks-hdp)](https://pypi.org/project/llama-index-callbacks-hdp/)
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19332023-blue?style=flat-square)](https://doi.org/10.5281/zenodo.19332023)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.04522-b31b1b?style=flat-square)](https://arxiv.org/abs/2604.04522)
@@ -58,6 +61,8 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 | [`hdp-autogen`](./packages/hdp-autogen)                | [PyPI](https://pypi.org/project/hdp-autogen/)                | Python     | AutoGen               | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat        |
 | [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen               | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows     |
 | [`hdp-langchain`](./packages/hdp-langchain)            | [PyPI](https://pypi.org/project/hdp-langchain/)              | Python     | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
+| [`llama-index-callbacks-hdp`](./packages/llama-index-callbacks-hdp) | [PyPI](https://pypi.org/project/llama-index-callbacks-hdp/) | Python | LlamaIndex | LlamaIndex integration — callback handler, instrumentation dispatcher, node postprocessor |
+| [`hdp-llamaindex`](./packages/hdp-llamaindex)          | [PyPI](https://pypi.org/project/hdp-llamaindex/)             | Python     | LlamaIndex            | Metapackage — `pip install hdp-llamaindex` for HDP-first users             |
 
 ## Install
 
@@ -101,6 +106,14 @@ pip install hdp-autogen
 
 ```bash
 pip install hdp-langchain
+```
+
+**Python / LlamaIndex**
+
+```bash
+pip install llama-index-callbacks-hdp
+# or, from the HDP side:
+pip install hdp-llamaindex
 ```
 
 ---
@@ -405,6 +418,80 @@ print(result.valid, result.hop_count, result.violations)
 
 ---
 
+## LlamaIndex Integration
+
+`llama-index-callbacks-hdp` covers all three LlamaIndex hook points. Use whichever layer fits your pipeline — they share the same ContextVar-backed session so all three can be active simultaneously.
+
+### Option 1 — Instrumentation dispatcher (recommended, LlamaIndex ≥0.10.20)
+
+```python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from llama_index.callbacks.hdp import HdpInstrumentationHandler, HdpPrincipal, ScopePolicy, verify_chain
+
+private_key = Ed25519PrivateKey.generate()
+
+HdpInstrumentationHandler.init(
+    signing_key=private_key.private_bytes_raw(),
+    principal=HdpPrincipal(id="alice@corp.com", id_type="email"),
+    scope=ScopePolicy(
+        intent="Research RAG pipeline",
+        authorized_tools=["web_search", "retriever"],
+        max_hops=10,
+    ),
+    on_token_ready=lambda token: print(token["header"]["token_id"]),
+)
+# All subsequent LlamaIndex queries are now covered — no further changes required
+```
+
+### Option 2 — Legacy CallbackManager
+
+```python
+from llama_index.callbacks.hdp import HdpCallbackHandler, HdpPrincipal, ScopePolicy
+from llama_index.core import Settings
+from llama_index.core.callbacks import CallbackManager
+
+handler = HdpCallbackHandler(
+    signing_key=private_key.private_bytes_raw(),
+    principal=HdpPrincipal(id="alice@corp.com", id_type="email"),
+    scope=ScopePolicy(intent="Research pipeline"),
+)
+Settings.callback_manager = CallbackManager([handler])
+```
+
+### Option 3 — Node postprocessor (RAG retrieval enforcement)
+
+```python
+from llama_index.callbacks.hdp import HdpNodePostprocessor
+
+postprocessor = HdpNodePostprocessor(
+    signing_key=private_key.private_bytes_raw(),
+    strict=False,
+    check_data_classification=True,
+)
+query_engine = index.as_query_engine(node_postprocessors=[postprocessor])
+```
+
+### Verifying the chain
+
+```python
+from llama_index.callbacks.hdp import verify_chain
+
+result = verify_chain(token_dict, private_key.public_key())
+print(result.valid, result.hop_count, result.violations)
+```
+
+| # | Consideration | Behaviour |
+|---|---|---|
+| 1 | **Hook coverage** | Instrumentation dispatcher captures `QueryStartEvent`, `AgentToolCallEvent`, `LLMChatStartEvent`, `QueryEndEvent`. Callback handler covers legacy `FUNCTION_CALL` and `LLM` events. |
+| 2 | **Shared session** | All three layers read/write the same `ContextVar` — a token issued by the instrumentation handler is visible to the node postprocessor in the same asyncio task. |
+| 3 | **Scope enforcement** | `strict=True` raises `HDPScopeViolationError` on out-of-scope tool calls; default logs and records in the audit trail. |
+| 4 | **Data classification** | Postprocessor checks token `data_classification` against a 4-level hierarchy: `public < internal < confidential < restricted`. |
+| 5 | **Observability overlap** | HDP complements Arize Phoenix and Langfuse — they record *what* happened; HDP records *who authorized it* with a cryptographic proof. |
+
+→ [Full LlamaIndex integration docs](./packages/llama-index-callbacks-hdp/README.md)
+
+---
+
 ## Key Management
 
 HDP ships a `KeyRegistry` for `kid → publicKey` resolution and a well-known endpoint format for automated key distribution.
@@ -620,6 +707,30 @@ git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
 
 Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-hdp-autogen`
 
+### hdp-langchain → PyPI
+
+```bash
+git tag python/hdp-langchain/v0.1.1 && git push origin python/hdp-langchain/v0.1.1
+```
+
+Pipeline: `test-hdp-langchain` → `vet-hdp-langchain` (ReleaseGuard) → `publish-hdp-langchain`
+
+### llama-index-callbacks-hdp → PyPI
+
+```bash
+git tag python/llama-index-callbacks-hdp/v0.1.1 && git push origin python/llama-index-callbacks-hdp/v0.1.1
+```
+
+Pipeline: `test-llama-index-callbacks-hdp` → `vet-llama-index-callbacks-hdp` (ReleaseGuard) → `publish-llama-index-callbacks-hdp`
+
+### hdp-llamaindex → PyPI
+
+```bash
+git tag python/hdp-llamaindex/v0.1.1 && git push origin python/hdp-llamaindex/v0.1.1
+```
+
+Pipeline: `test-hdp-llamaindex` → `vet-hdp-llamaindex` (ReleaseGuard) → `publish-hdp-llamaindex`
+
 ### Artifact vetting — ReleaseGuard
 
 Every artifact is scanned by [ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard) before it reaches PyPI or npm — checking for secrets, unexpected files, license compliance, and generating a CycloneDX SBOM. The exact vetted artifact is what gets published. If ReleaseGuard fails, the publish job never runs.
@@ -629,6 +740,8 @@ Every artifact is scanned by [ReleaseGuard](https://github.com/Helixar-AI/Releas
 cd packages/hdp-grok && python -m build && releaseguard check ./dist
 cd packages/hdp-crewai && python -m build && releaseguard check ./dist
 cd packages/hdp-autogen && python -m build && releaseguard check ./dist
+cd packages/hdp-langchain && python -m build && releaseguard check ./dist
+cd packages/llama-index-callbacks-hdp && python -m build && releaseguard check ./dist
 cd packages/hdp-autogen-ts && npm run build && releaseguard check ./dist
 ```
 
