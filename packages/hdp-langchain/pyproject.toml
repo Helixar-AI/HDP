@@ -7,7 +7,7 @@ name = "hdp-langchain"
 version = "0.1.0"
 description = "HDP (Human Delegation Provenance) middleware for LangChain — cryptographic audit trail for multi-agent delegation"
 readme = "README.md"
-license = { text = "CC-BY-4.0" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 dependencies = [
     "langchain-core>=0.2.0",

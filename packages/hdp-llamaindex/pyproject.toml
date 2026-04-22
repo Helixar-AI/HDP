@@ -7,7 +7,7 @@ name = "hdp-llamaindex"
 version = "0.1.0"
 description = "HDP (Human Delegation Provenance) integration for LlamaIndex — metapackage"
 readme = "README.md"
-license = { text = "CC-BY-4.0" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 dependencies = [
     "llama-index-callbacks-hdp>=0.1.0",
