@@ -121,4 +121,4 @@ Tokens produced by `hdp-grok` use the same Ed25519 + RFC 8785 wire format as the
 
 ## License
 
-CC-BY-4.0
+Apache-2.0

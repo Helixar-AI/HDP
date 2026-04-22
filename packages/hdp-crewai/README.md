@@ -117,4 +117,4 @@ Human Delegation Provenance (HDP) is an IETF draft:
 
 ## License
 
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — Helixar Limited
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) — Helixar Limited
