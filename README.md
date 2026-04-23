@@ -12,7 +12,7 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 [![npm version](https://img.shields.io/npm/v/@helixar_ai/hdp?style=flat-square&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@helixar_ai/hdp)
 [![PyPI hdp-crewai](https://img.shields.io/pypi/v/hdp-crewai?style=flat-square&logo=pypi&logoColor=white&color=0ea5e9&label=hdp-crewai)](https://pypi.org/project/hdp-crewai/)
 [![PyPI hdp-grok](https://img.shields.io/pypi/v/hdp-grok?style=flat-square&logo=pypi&logoColor=white&color=7c3aed&label=hdp-grok)](https://pypi.org/project/hdp-grok/)
-[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg?style=flat-square)](https://creativecommons.org/licenses/by/4.0/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square)](https://www.apache.org/licenses/LICENSE-2.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.10-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -773,4 +773,4 @@ If you use HDP in your research, please cite:
 
 ## License
 
-[CC BY 4.0](./LICENSE) — Helixar Limited
+[Apache License 2.0](./LICENSE) — Helixar Limited

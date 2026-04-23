@@ -86,4 +86,4 @@ asyncio.run(main())
 
 ## License
 
-CC-BY-4.0 — Helixar AI
+Apache-2.0 — Helixar AI

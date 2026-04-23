@@ -34,5 +34,5 @@
     "url": "git+https://github.com/Helixar-AI/HDP.git",
     "directory": "packages/hdp-physical"
   },
-  "license": "CC-BY-4.0"
+  "license": "Apache-2.0"
 }

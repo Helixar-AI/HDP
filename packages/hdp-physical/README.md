@@ -112,4 +112,4 @@ For the full protocol background, threat model, and companion specification:
 
 ## License
 
-CC-BY-4.0 — Helixar AI
+Apache-2.0 — Helixar AI
