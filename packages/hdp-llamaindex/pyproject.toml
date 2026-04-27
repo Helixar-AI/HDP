@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hdp-llamaindex"
-version = "0.1.0"
+version = "0.1.1"
 description = "HDP (Human Delegation Provenance) integration for LlamaIndex — metapackage"
 readme = "README.md"
 license = { text = "Apache-2.0" }
