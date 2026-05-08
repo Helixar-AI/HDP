@@ -177,6 +177,11 @@ class HdpMiddleware:
                 tool_name,
                 authorized,
             )
+            if self._token is None:
+                logger.warning(
+                    "HDP scope violation for '%s' could not be recorded — no token issued yet",
+                    tool_name,
+                )
             self._record_scope_violation(tool_name)
 
         await call_next()
