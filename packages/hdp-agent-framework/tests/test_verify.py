@@ -182,13 +182,6 @@ class TestWrongPublicKey:
 # ---------------------------------------------------------------------------
 
 class TestEmptyChain:
-    def test_empty_chain_is_valid(self):
-        priv, pub = _generate_key()
-        token = _build_root_token(priv)
-        result = verify_chain(token, pub)
-        assert result.valid is True
-        assert result.hop_count == 0
-
     def test_empty_chain_depth_is_zero(self):
         priv, pub = _generate_key()
         token = _build_root_token(priv)

@@ -222,6 +222,10 @@ class TestFunctionMiddlewareScopeEnforcement:
         ctx = FakeFunctionContext(function=FakeFunctionInfo(name="any_tool"))
         await mw._function_middleware(ctx, call_next)
         call_next.assert_awaited_once()
+        violations = (
+            mw.export_token().get("scope", {}).get("extensions", {}).get("scope_violations", [])
+        )
+        assert violations == []
 
     @pytest.mark.asyncio
     async def test_unauthorized_tool_recorded_as_violation(self):
