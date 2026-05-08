@@ -12,6 +12,7 @@ __pycache__/
 # Claude / AI planning artifacts — excluded from repo
 docs/superpowers/
 docs/*-design.md
+docs/*-draft.md
 .superpowers/
 .DS_Store
 .worktrees/
