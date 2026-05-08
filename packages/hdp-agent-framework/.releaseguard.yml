@@ -1,4 +1,8 @@
 # ReleaseGuard policy for hdp-agent-framework Python artifacts
+# https://github.com/Helixar-AI/ReleaseGuard
+#
+# Scans the built wheel and sdist before they are published to PyPI.
+# Run locally: releaseguard check ./dist
 version: 2
 
 project:
@@ -37,7 +41,7 @@ scanning:
       - LICENSE
 
 transforms:
-  add_checksums: false
+  add_checksums: false  # PyPI rejects non-dist files — checksums are handled by PyPI itself
   add_manifest: false
 
 policy:
