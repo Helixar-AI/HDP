@@ -8,6 +8,7 @@ on:
       - 'python/hdp-grok/v*'
       - 'python/hdp-langchain/v*'
       - 'python/hdp-autogen/v*'
+      - 'python/hdp-agent-framework/v*'
       - 'python/hdp-physical/v*'
       - 'python/llama-index-callbacks-hdp/v*'
       - 'python/hdp-llamaindex/v*'
@@ -865,6 +866,89 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: hdp-llamaindex-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── hdp-agent-framework (Python / Microsoft agent-framework) ─────────────
+
+  test-hdp-agent-framework:
+    name: Test hdp-agent-framework
+    if: startsWith(github.ref, 'refs/tags/python/hdp-agent-framework/v')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-agent-framework
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-agent-framework
+        run: pytest tests/ -v
+
+  vet-hdp-agent-framework:
+    name: Build & Vet hdp-agent-framework (ReleaseGuard)
+    needs: test-hdp-agent-framework
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: packages/hdp-agent-framework
+        run: python -m build
+
+      - name: Vet artifacts with ReleaseGuard
+        uses: Helixar-AI/ReleaseGuard@94c067008f3ad516d4b61a6e7163d9d5518a4548
+        with:
+          path: packages/hdp-agent-framework/dist
+          config: packages/hdp-agent-framework/.releaseguard.yml
+          sbom: 'true'
+          fix: 'true'
+          format: sarif
+          artifact-name: releaseguard-evidence-hdp-agent-framework
+
+      - name: Upload vetted distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdp-agent-framework-dist
+          path: packages/hdp-agent-framework/dist/
+          retention-days: 1
+
+  publish-hdp-agent-framework:
+    name: Publish hdp-agent-framework to PyPI
+    needs: vet-hdp-agent-framework
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: pypi-hdp-agent-framework
+      url: https://pypi.org/project/hdp-agent-framework/
+    steps:
+      - name: Download vetted distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: hdp-agent-framework-dist
           path: dist/
 
       - name: Publish to PyPI

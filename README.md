@@ -23,6 +23,7 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 [![CrewAI](https://img.shields.io/badge/CrewAI-integration-f43f5e?style=flat-square)](./packages/hdp-crewai)
 [![Grok / xAI](https://img.shields.io/badge/Grok%20%2F%20xAI-integration-000000?style=flat-square)](./packages/hdp-grok)
 [![AutoGen](https://img.shields.io/badge/AutoGen-integration-10b981?style=flat-square)](./packages/hdp-autogen)
+[![agent-framework](https://img.shields.io/badge/agent--framework-integration-0078d4?style=flat-square)](./packages/hdp-agent-framework)
 [![LangChain](https://img.shields.io/badge/LangChain-integration-1c7c4c?style=flat-square)](./packages/hdp-langchain)
 [![LlamaIndex](https://img.shields.io/badge/LlamaIndex-integration-7c3aed?style=flat-square)](./packages/llama-index-callbacks-hdp)
 [![PyPI llama-index-callbacks-hdp](https://img.shields.io/pypi/v/llama-index-callbacks-hdp?style=flat-square&logo=pypi&logoColor=white&color=7c3aed&label=llama-index-callbacks-hdp)](https://pypi.org/project/llama-index-callbacks-hdp/)
@@ -59,6 +60,7 @@ When a person authorizes an AI agent to act — and that agent delegates to anot
 | [`hdp-crewai`](./packages/hdp-crewai)                  | [PyPI](https://pypi.org/project/hdp-crewai/)                 | Python     | CrewAI                | CrewAI middleware — attaches HDP to any crew                               |
 | [`hdp-grok`](./packages/hdp-grok)                      | [PyPI](https://pypi.org/project/hdp-grok/)                   | Python     | Grok / xAI            | Grok middleware — attaches HDP to any xAI conversation                     |
 | [`hdp-autogen`](./packages/hdp-autogen)                | [PyPI](https://pypi.org/project/hdp-autogen/)                | Python     | AutoGen               | AutoGen middleware — attaches HDP to any AutoGen agent or GroupChat        |
+| [`hdp-agent-framework`](./packages/hdp-agent-framework) | [PyPI](https://pypi.org/project/hdp-agent-framework/)       | Python     | Microsoft agent-framework | agent-framework middleware — attaches HDP to any Agent or workflow    |
 | [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen               | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows     |
 | [`hdp-langchain`](./packages/hdp-langchain)            | [PyPI](https://pypi.org/project/hdp-langchain/)              | Python     | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
 | [`llama-index-callbacks-hdp`](./packages/llama-index-callbacks-hdp) | [PyPI](https://pypi.org/project/llama-index-callbacks-hdp/) | Python | LlamaIndex | LlamaIndex integration — callback handler, instrumentation dispatcher, node postprocessor |
@@ -100,6 +102,12 @@ pip install hdp-grok
 
 ```bash
 pip install hdp-autogen
+```
+
+**Python / Microsoft agent-framework**
+
+```bash
+pip install hdp-agent-framework
 ```
 
 **Python / LangChain**
@@ -418,6 +426,50 @@ print(result.valid, result.hop_count, result.violations)
 
 ---
 
+## Microsoft agent-framework Integration
+
+`hdp-agent-framework` attaches HDP to any Microsoft agent-framework `Agent` via the native `ChatMiddleware` and function middleware protocols. A single `middleware.configure(agent)` call appends both middlewares to `agent.middleware` — no other changes required.
+
+```python
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity.aio import AzureCliCredential
+from hdp_agent_framework import HdpMiddleware, HdpPrincipal, ScopePolicy, verify_chain
+
+private_key = Ed25519PrivateKey.generate()
+
+middleware = HdpMiddleware(
+    signing_key=private_key.private_bytes_raw(),
+    session_id="analysis-2026",
+    principal=HdpPrincipal(id="analyst@corp.com", id_type="email"),
+    scope=ScopePolicy(
+        intent="Analyse Q1 sales data and generate a summary",
+        authorized_tools=["fetch_data", "write_report"],
+        max_hops=5,
+    ),
+)
+
+agent = Agent(client=FoundryChatClient(credential=AzureCliCredential()), name="sales_analyst", tools=[...])
+middleware.configure(agent)   # attaches chat + function middleware — one line
+await agent.run("Analyse Q1 EMEA sales and write a summary.")
+
+result = verify_chain(middleware.export_token(), private_key.public_key())
+print(result.valid, result.hop_count)
+```
+
+| # | Consideration | Behaviour |
+|---|---|---|
+| 1 | **Scope enforcement** | Tool calls are inspected against `authorized_tools`. `strict=True` raises `HDPScopeViolationError`; default logs and records in the audit trail. |
+| 2 | **Delegation depth** | `max_hops` is enforced; hops beyond the limit are skipped and logged. |
+| 3 | **Token size / perf** | Ed25519 = 64 bytes/hop. All operations are non-blocking — failures log, never halt agents. |
+| 4 | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. |
+| 5 | **Agent integration** | `configure()` appends `HdpMiddleware` and `_function_middleware` to `agent.middleware` — idempotent, duck-typed, no hard dependency on agent-framework internals. |
+
+→ [Full agent-framework integration docs](./packages/hdp-agent-framework/README.md)
+
+---
+
 ## LlamaIndex Integration
 
 `llama-index-callbacks-hdp` covers all three LlamaIndex hook points. Use whichever layer fits your pipeline — they share the same ContextVar-backed session so all three can be active simultaneously.
@@ -707,6 +759,14 @@ git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
 
 Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-hdp-autogen`
 
+### hdp-agent-framework → PyPI
+
+```bash
+git tag python/hdp-agent-framework/v0.1.0 && git push origin python/hdp-agent-framework/v0.1.0
+```
+
+Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` (ReleaseGuard) → `publish-hdp-agent-framework`
+
 ### hdp-langchain → PyPI
 
 ```bash
@@ -740,6 +800,7 @@ Every artifact is scanned by [ReleaseGuard](https://github.com/Helixar-AI/Releas
 cd packages/hdp-grok && python -m build && releaseguard check ./dist
 cd packages/hdp-crewai && python -m build && releaseguard check ./dist
 cd packages/hdp-autogen && python -m build && releaseguard check ./dist
+cd packages/hdp-agent-framework && python -m build && releaseguard check ./dist
 cd packages/hdp-langchain && python -m build && releaseguard check ./dist
 cd packages/llama-index-callbacks-hdp && python -m build && releaseguard check ./dist
 cd packages/hdp-autogen-ts && npm run build && releaseguard check ./dist
