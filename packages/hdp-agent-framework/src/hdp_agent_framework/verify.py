@@ -114,10 +114,11 @@ def verify_chain(token: dict, public_key: Ed25519PublicKey | bytes) -> Verificat
             seq=hop.get("seq", i + 1),
             agent_id=hop.get("agent_id", "unknown"),
             valid=ok,
-            reason="" if ok else "Hop signature invalid",
+            reason="" if ok else "Signature invalid - chain verification stopped here",
         ))
         if not ok:
             violations.append(f"Hop {hop.get('seq', i + 1)} ({hop.get('agent_id', '?')}) signature invalid")
+            break  # each hop is verified against the cumulative chain; subsequent results are unreliable
 
     # 5. Check sequential seq numbers
     for j, hop in enumerate(chain):

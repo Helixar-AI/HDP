@@ -146,6 +146,50 @@ for v in token["scope"].get("extensions", {}).get("scope_violations", []):
 
 ---
 
+## Session and key management
+
+### Session ID uniqueness
+
+Use a unique `session_id` per delegation session — for example, a UUID generated at
+session start. Each token embeds the session ID in the root signature. If two sessions
+share the same ID:
+
+- Cryptographic security is unaffected (each token has its own independent chain)
+- Auditability breaks: logs indexed by session ID become ambiguous, and replay
+  detection based on session ID is defeated
+
+```python
+import uuid
+middleware = HdpMiddleware(
+    signing_key=key,
+    session_id=str(uuid.uuid4()),  # unique per session
+    ...
+)
+```
+
+### Key rotation
+
+Ed25519 key pairs are long-lived credentials. Rotate them periodically by generating a
+new key pair and updating `signing_key` and `key_id` for new sessions.
+
+```python
+new_key = Ed25519PrivateKey.generate()
+
+middleware = HdpMiddleware(
+    signing_key=new_key.private_bytes_raw(),
+    key_id="2026-Q3",             # label stored in token header
+    session_id=str(uuid.uuid4()),
+    ...
+)
+```
+
+Tokens issued before rotation remain verifiable with the old public key.
+There is no built-in revocation — the protocol is intentionally offline-first.
+Revocation must be handled at the application layer (e.g., by publishing a revocation
+list keyed on `key_id`).
+
+---
+
 ## Cross-language compatibility
 
 HDP tokens use the same wire format across all language SDKs (RFC 8785 canonical JSON
