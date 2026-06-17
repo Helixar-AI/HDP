@@ -40,7 +40,7 @@
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "json-canonicalize": "^2.0.0",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
