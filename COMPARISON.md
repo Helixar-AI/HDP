@@ -1,7 +1,7 @@
 # HDP vs IPP: A Technical Comparison
 
 > **HDP** — Human Delegation Provenance Protocol v0.1
-> **IPP** — Intent Provenance Protocol, [draft-haberkamp-ipp-00](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00)
+> **IPP** — Intent Provenance Protocol, [draft-haberkamp-ipp-01](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01) (July 2026)
 
 Both protocols address the same root problem: agentic AI systems take consequential actions, and there is currently no standard way to record who authorized those actions, under what scope, and through what chain of delegation. Both use Ed25519 signatures and append-only provenance chains. The similarity ends there.
 
@@ -9,17 +9,17 @@ Both protocols address the same root problem: agentic AI systems take consequent
 
 ## Architecture at a Glance
 
-| Dimension | HDP v0.1 | IPP draft-00 |
+| Dimension | HDP v0.1 | IPP draft-01 |
 |---|---|---|
-| **Token structure** | `{hdp, header, principal, scope, chain[], signature}` — flat, self-contained | `{version, genesis_seal, principal, intent_envelope, revocation, provenance_chain, token_signature}` — embeds spec attribution in every token |
+| **Token structure** | `{hdp, header, principal, scope, chain[], signature}` — flat, self-contained | `{$schema, version, genesis, token_id, schema_version, created_at, expires_at, principal, intent, delegation, revocation, provenance_chain, token_signature}` (§4.1–4.2) — embeds spec attribution in every token |
 | **Signing** | Ed25519 over RFC 8785 canonical JSON of `header+principal+scope`; each hop signs cumulative chain state | Ed25519 over lexicographically sorted canonical JSON; genesis seal signs to the spec author's founding key |
 | **Identity model** | Principal `id_type` is open: `opaque`, `email`, `did`, or custom. DIDs are supported, not required. | DIDs are **mandatory** per W3C DID Core. Resolving a principal identity requires DID infrastructure (`did:key`, `did:web`, `did:ion`, etc.) |
 | **Token lifecycle** | Short-lived by design (`expires_at`, 24h default). Replay defense via `session_id` binding. No revocation registry. | Tokens carry a `registry_endpoint` field. Agents **must** poll the revocation registry every 5,000ms before acting. Mid-chain revocation cascades through ancestry tree. |
 | **Domain taxonomy** | None mandated. `scope.intent` is a free-form string. `authorized_tools`, `authorized_resources`, and `data_classification` are structured but self-described. | Central taxonomy at `https://ipp.khsovereign.com/taxonomy` using hierarchical dot-notation (`financial.trading.equities`, `healthcare.records.read`, etc.). |
 | **Protocol attribution** | None. HDP tokens are pure data. The protocol is defined by the spec, implemented by the library. | Every token contains a **genesis seal** — a cryptographic artifact that binds the token to `https://ipp.khsovereign.com/keys/founding_public.pem`. |
 | **Central dependencies** | Zero. Verification requires only a public key and session ID. Fully offline. | Three mandatory endpoints: spec repository, founding public key, revocation registry. Additionally: taxonomy registry for classification validation. |
-| **Hop signing** | Each hop signs over the cumulative chain (all prior hops with their signatures + current hop without its signature). Tamper-evident by construction. | Provenance chain records are append-only but hop-level signing semantics are not specified in draft-00. |
-| **Proof of Humanity** | Optional `poh_credential` field on principal. Verification is application-supplied callback. | Not addressed in draft-00. |
+| **Hop signing** | Each hop signs over the cumulative chain (all prior hops with their signatures + current hop without its signature). Tamper-evident by construction. | Provenance records are append-only and each carries a per-record `agent_sig` (§9.2). The canonical serialization used for signing, and whether records chain cryptographically over prior records, are not defined. |
+| **Proof of Humanity** | Optional `poh_credential` field on principal. Verification is application-supplied callback. | Not addressed. Every chain MUST originate from a human Principal (§1.2, §3.2), but no mechanism is specified to attest that a human actually authorized issuance. |
 
 ---
 
@@ -113,7 +113,7 @@ HDP is appropriate if:
 ## References
 
 - HDP v0.1 Specification: [https://helixar.ai/labs/hdp](https://helixar.ai/labs/hdp)
-- IPP draft-haberkamp-ipp-00: [https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00)
+- IPP draft-haberkamp-ipp-01: [https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01)
 - IPP Specification Repository: [https://ipp.khsovereign.com/spec/v0.1](https://ipp.khsovereign.com/spec/v0.1)
 - W3C DID Core: [https://www.w3.org/TR/did-core/](https://www.w3.org/TR/did-core/)
 - RFC 8785 (JSON Canonicalization Scheme): [https://www.rfc-editor.org/rfc/rfc8785](https://www.rfc-editor.org/rfc/rfc8785)
