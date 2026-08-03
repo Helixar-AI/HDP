@@ -30,6 +30,7 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 [![ReleaseGuard](https://img.shields.io/badge/artifacts-ReleaseGuard%20vetted-22c55e?style=flat-square&logo=shield)](https://github.com/Helixar-AI/ReleaseGuard)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19332023-blue?style=flat-square)](https://doi.org/10.5281/zenodo.19332023)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.04522-b31b1b?style=flat-square)](https://arxiv.org/abs/2604.04522)
+[![IETF Internet-Draft](https://img.shields.io/badge/IETF-draft--helixar--hdp--agentic--delegation-0b3d91?style=flat-square)](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)
 
 <br/>
 
@@ -46,6 +47,8 @@ HDP (Human Delegation Provenance) is an open protocol that captures, structures,
 When a person authorizes an AI agent to act — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain of custody from the authorizing human to every downstream action. The full delegation trail is encoded in a compact, self-contained token signed with Ed25519 and canonicalized with RFC 8785. Verification is fully offline: it requires only a public key, no central registry, no network call.
 
 **Who it is for:** developers building AI agents with Grok/xAI, CrewAI, MCP servers, or any OpenAI-compatible API who need accountability, auditability, and proof of human authorization at every step.
+
+**Standardization:** HDP is specified in the IETF individual Internet-Draft [draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) (Informational). The wire protocol described there is v0.1 and matches this implementation.
 
 ---
 
@@ -156,7 +159,7 @@ let token = await issueToken({
     data_classification: "confidential",
     network_egress: false,
     persistence: true,
-    max_hops: 3,
+    max_hops: 3,        // issuer's choice of delegation budget, not a protocol limit
   },
   signingKey: privateKey,
   keyId: "alice-signing-key-v1",
@@ -672,7 +675,7 @@ const auditEntry = buildAuditSafe(token); // token_id + intent + chain summary
 2. Expiry (`expires_at`)
 3. Root signature (Ed25519 over header + principal + scope)
 4. Hop signatures — mandatory per §6.3 Rule 6 (each hop signs cumulative chain state)
-5. `max_hops` constraint
+5. `max_hops` constraint — the issuer chooses this value; HDP defines no fixed or maximum number of hops, and omitting it leaves chain length unbounded
 6. Session ID binding (replay defense)
 7. Proof-of-Humanity credential (optional, application-supplied callback)
 
@@ -680,7 +683,7 @@ const auditEntry = buildAuditSafe(token); // token_id + intent + chain summary
 
 ## Why Not IPP?
 
-The [Intent Provenance Protocol](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-00) (draft-haberkamp-ipp-00) solves the same problem with different trade-offs. The critical difference: **IPP requires agents to poll a central revocation registry every 5 seconds**. If the registry is unreachable, agents cannot safely act. Every IPP token is also cryptographically anchored to `ipp.khsovereign.com/keys/founding_public.pem` — making fully self-sovereign deployment impossible.
+The [Intent Provenance Protocol](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01) (draft-haberkamp-ipp-01) solves the same problem with different trade-offs. The critical difference: **IPP requires agents to poll a central revocation registry every 5 seconds**. If the registry is unreachable, agents cannot safely act. Every IPP token is also cryptographically anchored to `ipp.khsovereign.com/keys/founding_public.pem` — making fully self-sovereign deployment impossible.
 
 HDP verification is fully offline. It requires only a public key and a session ID. No registry. No central endpoint. No third-party trust anchor.
 
