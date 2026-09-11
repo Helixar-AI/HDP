@@ -8,7 +8,7 @@ async function makeBaseToken(): Promise<{ token: HdpToken; privateKey: Uint8Arra
   const { privateKey, publicKey } = await generateKeyPair()
   const unsigned = {
     hdp: '0.1' as const,
-    header: { token_id: 'test-token-id', issued_at: Date.now(), expires_at: Date.now() + 3600000, session_id: 'sess-1', version: '0.1' },
+    header: { token_id: '550e8400-e29b-41d4-a716-446655440000', issued_at: Date.now(), expires_at: Date.now() + 3600000, session_id: 'sess-1', version: '0.1' },
     principal: { id: 'u', id_type: 'opaque' as const },
     scope: { intent: 'test', data_classification: 'public' as const, network_egress: false, persistence: false, max_hops: 3 },
     chain: [] as any[],
@@ -53,5 +53,47 @@ describe('extendChain', () => {
     const originalChainLength = token.chain.length
     await extendChain(token, { agent_id: 'a1', agent_type: 'orchestrator', action_summary: 'x', parent_hop: 0 }, privateKey)
     expect(token.chain).toHaveLength(originalChainLength)
+  })
+
+  it('rejects an invalid existing chain before extending it', async () => {
+    const { token, privateKey } = await makeBaseToken()
+    const poisoned = {
+      ...token,
+      chain: [{
+        seq: 1,
+        agent_id: 'a1',
+        agent_type: 'orchestrator' as const,
+        timestamp: Date.now(),
+        action_summary: 'x',
+        parent_hop: 0,
+        hop_signature: '',
+      }],
+    }
+
+    await expect(extendChain(poisoned, {
+      agent_id: 'a2', agent_type: 'sub-agent', action_summary: 'x', parent_hop: 1,
+    }, privateKey)).rejects.toThrow('CHAIN_INTEGRITY')
+  })
+
+  it('rejects a new hop with an invalid parent_hop', async () => {
+    const { token, privateKey } = await makeBaseToken()
+    await expect(extendChain(token, {
+      agent_id: 'a1', agent_type: 'orchestrator', action_summary: 'x', parent_hop: 1,
+    }, privateKey)).rejects.toThrow('CHAIN_INTEGRITY')
+  })
+
+  it('rejects extension when the generated timestamp would go backwards', async () => {
+    const { token, privateKey } = await makeBaseToken()
+    const first = await extendChain(token, {
+      agent_id: 'a1', agent_type: 'orchestrator', action_summary: 'x', parent_hop: 0,
+    }, privateKey)
+    const poisoned = {
+      ...first,
+      chain: [{ ...first.chain[0], timestamp: Date.now() + 60_000 }],
+    }
+
+    await expect(extendChain(poisoned, {
+      agent_id: 'a2', agent_type: 'sub-agent', action_summary: 'x', parent_hop: 1,
+    }, privateKey)).rejects.toThrow('CHAIN_INTEGRITY')
   })
 })

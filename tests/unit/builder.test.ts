@@ -34,4 +34,17 @@ describe('TokenBuilder', () => {
     const builder = new TokenBuilder('s1').principal({ id: 'u', id_type: 'uuid' })
     expect(() => builder.build()).toThrow()
   })
+
+  it('rejects invalid lifetime and delegation-budget integers', () => {
+    expect(() => new TokenBuilder('s1')
+      .principal({ id: 'u', id_type: 'opaque' })
+      .scope({ intent: 'x', data_classification: 'public', network_egress: false, persistence: false })
+      .expiresInMs(0)
+      .build()).toThrow('positive safe integer')
+
+    expect(() => new TokenBuilder('s1')
+      .principal({ id: 'u', id_type: 'opaque' })
+      .scope({ intent: 'x', data_classification: 'public', network_egress: false, persistence: false, max_hops: 1.5 })
+      .build()).toThrow('scope.max_hops')
+  })
 })

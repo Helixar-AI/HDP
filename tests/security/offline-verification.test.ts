@@ -2,15 +2,15 @@
  * Offline Verification — Architectural Proof
  *
  * HDP verification is fully offline by design.
- * No revocation registry. No central endpoint. No network call.
+ * No central revocation registry. No central endpoint. No network call.
  *
  * IPP (draft-haberkamp-ipp-00) requires agents to poll a central revocation
  * registry at registry_endpoint every 5,000ms before acting. If the registry
  * is unreachable, agents cannot safely proceed — a hard liveness dependency.
  *
- * HDP's response: tokens are short-lived (24h default). Replay defense is
- * structural via session_id binding. Verification requires only the issuer's
- * public key and the current session ID. Nothing else.
+ * HDP's response: the issuer selects a lifetime, session_id provides
+ * cross-session replay defense, and each verifier uses local revocation state.
+ * Verification requires only local inputs.
  *
  * This test issues a token, extends it through a 3-hop chain, and verifies
  * the complete chain with zero network mocks, zero fetch stubs, and zero
@@ -25,7 +25,7 @@ import { verifyToken } from '../../src/token/verifier.js'
 describe('Offline Verification (HDP architectural guarantee)', () => {
   it('verifies a full 3-hop delegation chain with zero network calls', async () => {
     // All operations are local. No fetch(). No XMLHttpRequest. No DNS.
-    // No revocation registry. No DID resolver. No taxonomy endpoint.
+    // No central revocation registry. No DID resolver. No taxonomy endpoint.
     const { privateKey, publicKey } = await generateKeyPair()
 
     let token = await issueToken({
@@ -68,8 +68,8 @@ describe('Offline Verification (HDP architectural guarantee)', () => {
 
     expect(token.chain).toHaveLength(3)
 
-    // Verification: public key + session ID. Nothing else.
-    // No network. No registry. No resolver. Fully self-contained.
+    // Verification uses only local key, session, clock, and revocation inputs.
+    // No network, central registry, or resolver.
     const result = await verifyToken(token, {
       publicKey,
       currentSessionId: 'sess-offline-proof',

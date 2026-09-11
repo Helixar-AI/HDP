@@ -14,6 +14,8 @@ import {
   verifyToken,
   decodeHeader,
   encodeHeader,
+  HDP_HEADER,
+  HDP_LEGACY_HEADER,
 } from '@helixar_ai/hdp'
 import type {
   HdpToken,
@@ -229,11 +231,11 @@ export function hdpMiddleware(
   const { verify, hdp_required = false, onValid, onInvalid } = options
 
   return async (message: AutoGenMessage): Promise<AutoGenMessage> => {
-    const tokenHeader = message.headers?.['x-hdp-token'] ?? message.headers?.['X-HDP-Token']
+    const tokenHeader = readTokenHeader(message.headers)
 
     if (!tokenHeader) {
       if (hdp_required) {
-        return { error: 'HDP_REQUIRED: X-HDP-Token header is required' } as unknown as AutoGenMessage
+        return { error: 'HDP_REQUIRED: HDP-Token header is required' } as unknown as AutoGenMessage
       }
       return handler(message)
     }
@@ -265,6 +267,22 @@ export function hdpMiddleware(
     onValid?.(token)
     return handler(message)
   }
+}
+
+/**
+ * HTTP field names are case-insensitive. Prefer the draft -02 name and only
+ * fall back to the deprecated X-prefixed alias for inbound compatibility.
+ */
+function readTokenHeader(headers: Record<string, string> | undefined): string | undefined {
+  if (!headers) return undefined
+
+  let legacy: string | undefined
+  for (const [name, value] of Object.entries(headers)) {
+    const normalized = name.toLowerCase()
+    if (normalized === HDP_HEADER.toLowerCase()) return value
+    if (normalized === HDP_LEGACY_HEADER.toLowerCase()) legacy = value
+  }
+  return legacy
 }
 
 // ---------------------------------------------------------------------------

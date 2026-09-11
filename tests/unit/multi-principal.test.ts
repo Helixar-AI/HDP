@@ -19,6 +19,7 @@ describe('verifyPrincipalChain', () => {
       { currentSessionId: 'sess-mp-01' }
     )
     expect(result.valid).toBe(true)
+    expect(result.relationship).toBe('unknown')
     expect(result.results).toHaveLength(1)
   })
 
@@ -47,10 +48,14 @@ describe('verifyPrincipalChain', () => {
         { token: t1, publicKey: alice.publicKey },
         { token: t2, publicKey: bob.publicKey },
       ],
-      { currentSessionId: 'sess-mp-02' }
+      {
+        currentSessionId: 'sess-mp-02',
+        relationshipContext: { type: 'joint_authorization', authenticated: true },
+      }
     )
 
     expect(result.valid).toBe(true)
+    expect(result.relationship).toBe('joint_authorization')
     expect(result.results).toHaveLength(2)
     expect(t2.header.parent_token_id).toBe(t1.header.token_id)
   })

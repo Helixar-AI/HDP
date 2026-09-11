@@ -26,4 +26,18 @@ describe('validateChain', () => {
   it('rejects chain not starting at seq 1', () => {
     expect(() => validateChain([hop(2, 0)], undefined)).toThrow('CHAIN_INTEGRITY')
   })
+
+  it('rejects a hop whose parent is not a prior hop or the root', () => {
+    expect(() => validateChain([hop(1, 0), hop(2, 2)], undefined)).toThrow('CHAIN_INTEGRITY')
+    expect(() => validateChain([hop(1, 0), hop(2, -1)], undefined)).toThrow('CHAIN_INTEGRITY')
+  })
+
+  it('rejects decreasing hop timestamps', () => {
+    expect(() => validateChain([hop(1, 2000), hop(2, 1000)], undefined)).toThrow('CHAIN_INTEGRITY')
+  })
+
+  it('rejects a hop without a signature', () => {
+    const unsigned = { ...hop(1, 0), hop_signature: '' }
+    expect(() => validateChain([unsigned], undefined)).toThrow('CHAIN_INTEGRITY')
+  })
 })

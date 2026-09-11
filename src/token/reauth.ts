@@ -5,7 +5,7 @@
  * the task has expanded, or a high-risk action requires fresh human approval —
  * issue a new token with parent_token_id pointing to the original.
  *
- * Each scope change is a distinct human authorization event.
+ * Each scope change is a distinct signed delegation record.
  * The audit trail of parent_token_id chains documents how scope evolved.
  */
 import { TokenBuilder } from './builder.js'
@@ -21,7 +21,7 @@ export interface ReAuthOptions {
   sessionId?: string
   /** Override principal. Defaults to original principal. */
   principal?: HdpPrincipal
-  /** Token lifetime in ms. Defaults to 24h. */
+  /** Issuer-selected lifetime. The SDK currently falls back to 24h; HDP defines no protocol default. */
   expiresInMs?: number
   /** Ed25519 private key for signing the new token. */
   signingKey: Uint8Array
