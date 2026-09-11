@@ -3,7 +3,7 @@
 > **HDP** — Human Delegation Provenance Protocol v0.1
 > **IPP** — Intent Provenance Protocol, [draft-haberkamp-ipp-01](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01) (July 2026)
 
-Both protocols address the same root problem: agentic AI systems take consequential actions, and there is currently no standard way to record who authorized those actions, under what scope, and through what chain of delegation. Both use Ed25519 signatures and append-only provenance chains. The similarity ends there.
+Both protocols address the same root problem: agentic AI systems take consequential actions, and there is currently no standard way to record the human delegation context, declared scope, and subsequent chain of activity. Both use Ed25519 signatures and append-only provenance chains. The similarity ends there.
 
 ---
 
@@ -12,13 +12,13 @@ Both protocols address the same root problem: agentic AI systems take consequent
 | Dimension | HDP v0.1 | IPP draft-01 |
 |---|---|---|
 | **Token structure** | `{hdp, header, principal, scope, chain[], signature}` — flat, self-contained | `{$schema, version, genesis, token_id, schema_version, created_at, expires_at, principal, intent, delegation, revocation, provenance_chain, token_signature}` (§4.1–4.2) — embeds spec attribution in every token |
-| **Signing** | Ed25519 over RFC 8785 canonical JSON of `header+principal+scope`; each hop signs cumulative chain state | Ed25519 over lexicographically sorted canonical JSON; genesis seal signs to the spec author's founding key |
+| **Signing** | Ed25519 over the RFC 8785 canonical unsigned issuance token; each hop signs an array containing the root signature and cumulative chain state | Ed25519 over lexicographically sorted canonical JSON; genesis seal signs to the spec author's founding key |
 | **Identity model** | Principal `id_type` is open: `opaque`, `email`, `did`, or custom. DIDs are supported, not required. | DIDs are **mandatory** per W3C DID Core. Resolving a principal identity requires DID infrastructure (`did:key`, `did:web`, `did:ion`, etc.) |
-| **Token lifecycle** | Short-lived by design (`expires_at`, 24h default). Replay defense via `session_id` binding. No revocation registry. | Tokens carry a `registry_endpoint` field. Agents **must** poll the revocation registry every 5,000ms before acting. Mid-chain revocation cascades through ancestry tree. |
+| **Token lifecycle** | Issuer-chosen `expires_at`, `session_id` binding, and verifier-local revocation by `token_id`. HDP defines no default lifetime and requires no central registry. | Tokens carry a `registry_endpoint` field. Agents **must** poll the revocation registry every 5,000ms before acting. Mid-chain revocation cascades through ancestry tree. |
 | **Domain taxonomy** | None mandated. `scope.intent` is a free-form string. `authorized_tools`, `authorized_resources`, and `data_classification` are structured but self-described. | Central taxonomy at `https://ipp.khsovereign.com/taxonomy` using hierarchical dot-notation (`financial.trading.equities`, `healthcare.records.read`, etc.). |
 | **Protocol attribution** | None. HDP tokens are pure data. The protocol is defined by the spec, implemented by the library. | Every token contains a **genesis seal** — a cryptographic artifact that binds the token to `https://ipp.khsovereign.com/keys/founding_public.pem`. |
-| **Central dependencies** | Zero. Verification requires only a public key and session ID. Fully offline. | Three mandatory endpoints: spec repository, founding public key, revocation registry. Additionally: taxonomy registry for classification validation. |
-| **Hop signing** | Each hop signs over the cumulative chain (all prior hops with their signatures + current hop without its signature). Tamper-evident by construction. | Provenance records are append-only and each carries a per-record `agent_sig` (§9.2). The canonical serialization used for signing, and whether records chain cryptographically over prior records, are not defined. |
+| **Central dependencies** | Zero at verification time. Live verification uses a trusted issuer key, session context, time, and verifier-local revocation state. | Three mandatory endpoints: spec repository, founding public key, revocation registry. Additionally: taxonomy registry for classification validation. |
+| **Hop signing** | The issuer signs each cumulative chain state. This makes the supplied record tamper-evident, but records what the issuer attested; it is not a delegate signature or evidence of delegate consent. | Provenance records are append-only and each carries a per-record `agent_sig` (§9.2). The canonical serialization used for signing, and whether records chain cryptographically over prior records, are not defined. |
 | **Proof of Humanity** | Optional `poh_credential` field on principal. Verification is application-supplied callback. | Not addressed. Every chain MUST originate from a human Principal (§1.2, §3.2), but no mechanism is specified to attest that a human actually authorized issuance. |
 
 ---
@@ -35,7 +35,7 @@ This creates a hard liveness dependency: **if the registry is unreachable, agent
 - Network partitions turn into authorization outages
 - The registry operator has unilateral ability to halt all activity for all tokens
 
-HDP's response: tokens are short-lived. Default expiry is 24 hours; issuers can set it lower. A token that expires cannot be replayed regardless of network conditions. Replay defense is structural (`session_id` binding), not network-dependent.
+HDP's response: issuers choose the shortest lifetime their task permits, and verifiers maintain local revocation state keyed by `token_id`. A token that expires or is locally revoked is rejected without a network call. `session_id` binding separately prevents cross-session replay.
 
 ### Break 2: The Genesis Seal Creates a Single Point of Trust
 
@@ -70,8 +70,8 @@ HDP's response: `id_type: 'opaque'` is a valid and encouraged choice for most de
 
 These are not omissions. Each choice is deliberate:
 
-**No revocation registry.**
-Short-lived tokens with `session_id` binding are the revocation mechanism. Operators who need mid-session invalidation should issue shorter-lived tokens or implement application-layer session termination.
+**No central revocation registry.**
+Every verifier must be able to reject locally revoked `token_id` values. HDP does not define who may issue a revocation instruction, how it is distributed, or how long evidence is retained; those are verifier-policy decisions. Revocation freshness is therefore bounded by how that local state is populated, not by a network lookup during verification.
 
 **No central taxonomy.**
 `scope.intent` is a natural language string. Structured scope is expressed through `authorized_tools`, `authorized_resources`, and `data_classification`. Semantic validation of agent actions against declared intent is an application-layer concern — not a protocol concern.

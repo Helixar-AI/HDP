@@ -13,8 +13,7 @@ Every HDP token signature includes a `kid` (key ID) field:
   "signature": {
     "alg": "Ed25519",
     "kid": "alice-signing-key-v1",
-    "value": "...",
-    "signed_fields": ["header", "principal", "scope"]
+    "value": "..."
   }
 }
 ```
@@ -88,12 +87,12 @@ Set `principal.id_type: 'did'` and `principal.id: 'did:key:z6Mk...'` in the toke
 1. Generate a new key pair with a new `kid` (e.g. `alice-key-v2`)
 2. Add it to your well-known document alongside the old key
 3. Begin issuing new tokens with the new `kid`
-4. Once all tokens issued with the old `kid` have expired, remove it from the well-known document
+4. Once all tokens issued with the old `kid` have expired, remove it from the live well-known document; retain the key in an authenticated archive for as long as historical audit requires
 5. Never reuse a `kid` for a different key
 
 ## Production Checklist
 
 - [ ] Private keys stored in a secrets manager (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault)
 - [ ] Public keys served at `/.well-known/hdp-keys.json` or pre-provisioned in verifier config
-- [ ] Key rotation plan documented (new `kid` on rotation, old key retained until all its tokens expire)
+- [ ] Key rotation plan documented (new `kid` on rotation, old key retained for the audit retention period)
 - [ ] Token expiry set short enough that key rotation completes before exposure window closes (recommend ≤ 4h for sensitive operations)
