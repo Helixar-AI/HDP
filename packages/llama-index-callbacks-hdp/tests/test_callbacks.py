@@ -136,7 +136,8 @@ class TestToolCallHandling:
             event_id="e1",
         )
         last_hop = get_token()["chain"][-1]
-        assert "tool_output_preview" in last_hop.get("metadata", {})
+        assert last_hop["action_summary"] == "observed tool output: search results here"
+        assert last_hop["hop_signature"]
 
 
 class TestScopeEnforcement:
@@ -164,9 +165,11 @@ class TestScopeEnforcement:
             CBEventType.FUNCTION_CALL,
             payload={EventPayload.TOOL: FakeTool("exec_code")},
         )
-        violations = get_token()["scope"]["extensions"]["scope_violations"]
-        assert len(violations) == 1
-        assert violations[0]["tool"] == "exec_code"
+        token = get_token()
+        assert token["scope"].get("extensions") is None
+        assert token["chain"][-1]["agent_id"] == "llama-index-agent"
+        assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: exec_code"
+        assert token["chain"][-1]["hop_signature"]
 
     def test_strict_mode_raises(self):
         handler, _, _ = _make_handler(

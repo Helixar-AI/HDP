@@ -90,6 +90,7 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
 
         if self.check_data_classification:
             nodes = self._check_classification(nodes, token)
+            token = get_token() or token
 
         self._extend_chain(token, nodes, query_str)
         return nodes
@@ -145,11 +146,9 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
 
         try:
             if self._signing_key is None:
-                logger.debug(
-                    "HDP postprocessor: no signing key configured — recording unsigned retrieval hop"
+                logger.warning(
+                    "HDP postprocessor: no signing key configured; retrieval hop was not recorded"
                 )
-                token = {**token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}]}
-                set_token(token)
                 return
 
             cumulative = [*current_chain, unsigned_hop]
@@ -167,13 +166,21 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
         violated_classes: list,
         allowed: str,
     ) -> None:
-        scope = token.get("scope", {})
-        extensions = scope.get("extensions", {})
-        violations: list = extensions.get("classification_violations", [])
-        violations.append({
-            "violated_classifications": violated_classes,
-            "allowed_classification": allowed,
+        if self._signing_key is None:
+            logger.warning("HDP postprocessor: no signing key configured; classification violation was not recorded")
+            return
+        current_chain = token.get("chain", [])
+        next_seq = len(current_chain) + 1
+        unsigned_hop = {
+            "seq": next_seq,
+            "agent_id": "llama-index-retriever",
+            "agent_type": "tool-executor",
             "timestamp": int(time.time() * 1000),
-        })
-        token["scope"] = {**scope, "extensions": {**extensions, "classification_violations": violations}}
-        set_token(token)
+            "action_summary": (
+                "observed data-classification violation: "
+                f"{','.join(map(str, violated_classes))} exceeds {allowed}"
+            ),
+            "parent_hop": next_seq - 1,
+        }
+        hop_sig = sign_hop([*current_chain, unsigned_hop], token["signature"]["value"], self._signing_key)
+        set_token({**token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]})
