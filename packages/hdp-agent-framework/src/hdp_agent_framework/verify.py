@@ -4,7 +4,7 @@
 
 Design consideration #4: Verification Endpoint
 Enables downstream systems to validate a complete delegation chain using
-only the human's public key. Returns a structured result with validity
+only the issuer's public key. Returns a structured result with validity
 status, per-hop outcomes, violations, and depth metrics.
 
 Usage:

@@ -7,7 +7,7 @@
  *   const handler = hdpMiddleware(myToolHandler, { hdp_required: true, onValid: (token) => auditLog(token) })
  *   // handler is a drop-in replacement for myToolHandler
  */
-import { verifyToken, decodeHeader } from '@helixar_ai/hdp'
+import { verifyToken, decodeHeader, HDP_HEADER, HDP_LEGACY_HEADER } from '@helixar_ai/hdp'
 import type { HdpToken, VerificationOptions } from '@helixar_ai/hdp'
 
 export interface HdpMiddlewareOptions {
@@ -38,7 +38,7 @@ export interface HdpMiddlewareOptions {
 }
 
 export interface McpRequest {
-  /** HTTP headers or MCP metadata. May contain X-HDP-Token. */
+  /** HTTP headers or MCP metadata. HDP-Token is standard; X-HDP-Token is a deprecated input alias. */
   headers?: Record<string, string>
   /** MCP tool name */
   tool?: string
@@ -71,11 +71,11 @@ export function hdpMiddleware(
   const { verify, hdp_required = false, onValid, onInvalid } = options
 
   return async (request: McpRequest): Promise<McpResponse> => {
-    const tokenHeader = request.headers?.['x-hdp-token'] ?? request.headers?.['X-HDP-Token']
+    const tokenHeader = readTokenHeader(request.headers)
 
     if (!tokenHeader) {
       if (hdp_required) {
-        return { error: 'HDP_REQUIRED: X-HDP-Token header is required for this endpoint' }
+        return { error: 'HDP_REQUIRED: HDP-Token header is required for this endpoint' }
       }
       // Observe mode: no token present, pass through
       return handler(request)
@@ -111,6 +111,22 @@ export function hdpMiddleware(
     onValid?.(token)
     return handler(request)
   }
+}
+
+/**
+ * HTTP field names are case-insensitive. Prefer the draft -02 name and only
+ * fall back to the deprecated X-prefixed alias for inbound compatibility.
+ */
+function readTokenHeader(headers: Record<string, string> | undefined): string | undefined {
+  if (!headers) return undefined
+
+  let legacy: string | undefined
+  for (const [name, value] of Object.entries(headers)) {
+    const normalized = name.toLowerCase()
+    if (normalized === HDP_HEADER.toLowerCase()) return value
+    if (normalized === HDP_LEGACY_HEADER.toLowerCase()) legacy = value
+  }
+  return legacy
 }
 
 export type { HdpToken, VerificationOptions }

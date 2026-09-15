@@ -1,8 +1,8 @@
 """Cryptographic primitives for HDP — Ed25519 signing/verification with RFC 8785 canonical JSON.
 
 Matches the signing scheme in the TypeScript SDK (src/crypto/sign.ts + src/crypto/verify.ts):
-  - Root: canonicalize({header, principal, scope}) → Ed25519 → base64url
-  - Hop:  canonicalize({chain: [...], root_sig: <value>}) → Ed25519 → base64url
+  - Root: canonicalize({hdp, header, principal, scope, chain: []}) → Ed25519 → base64url
+  - Hop:  canonicalize([root_sig_value, ...cumulative_chain]) → Ed25519 → base64url
 
 Note: This file is shared across all HDP Python packages (hdp-crewai, hdp-autogen, hdp-grok,
 hdp-langchain). The implementation is identical in each — a shared hdp-core package is
@@ -31,21 +31,21 @@ def _canonicalize(obj: Any) -> bytes:
 
 def sign_root(unsigned_token: dict, private_key_bytes: bytes, kid: str) -> dict:
     """Sign the root token over {header, principal, scope} and return a signature dict."""
-    subset = {f: unsigned_token[f] for f in ["header", "principal", "scope"] if f in unsigned_token}
-    message = _canonicalize(subset)
+    payload = {f: unsigned_token[f] for f in ["hdp", "header", "principal", "scope"]}
+    payload["chain"] = []
+    message = _canonicalize(payload)
     key = Ed25519PrivateKey.from_private_bytes(private_key_bytes)
     sig_bytes = key.sign(message)
     return {
         "alg": "Ed25519",
         "kid": kid,
         "value": _b64url(sig_bytes),
-        "signed_fields": ["header", "principal", "scope"],
     }
 
 
 def sign_hop(cumulative_chain: list[dict], root_sig_value: str, private_key_bytes: bytes) -> str:
     """Sign a hop over the cumulative chain + root signature value."""
-    payload = {"chain": cumulative_chain, "root_sig": root_sig_value}
+    payload = [root_sig_value, *cumulative_chain]
     message = _canonicalize(payload)
     key = Ed25519PrivateKey.from_private_bytes(private_key_bytes)
     sig_bytes = key.sign(message)
@@ -59,10 +59,13 @@ def _b64url_decode(s: str) -> bytes:
 
 
 def verify_root(token: dict, public_key: Ed25519PublicKey) -> bool:
-    """Verify the root signature over {header, principal, scope}."""
+    """Verify the root signature over the canonical unsigned token."""
     try:
-        subset = {f: token[f] for f in ["header", "principal", "scope"] if f in token}
-        message = _canonicalize(subset)
+        if token["signature"].get("alg") != "Ed25519":
+            return False
+        payload = {f: token[f] for f in ["hdp", "header", "principal", "scope"]}
+        payload["chain"] = []
+        message = _canonicalize(payload)
         sig_bytes = _b64url_decode(token["signature"]["value"])
         public_key.verify(sig_bytes, message)
         return True
@@ -73,7 +76,7 @@ def verify_root(token: dict, public_key: Ed25519PublicKey) -> bool:
 def verify_hop(cumulative_chain: list[dict], root_sig_value: str, hop_signature: str, public_key: Ed25519PublicKey) -> bool:
     """Verify a single hop signature over the cumulative chain + root sig value."""
     try:
-        payload = {"chain": cumulative_chain, "root_sig": root_sig_value}
+        payload = [root_sig_value, *cumulative_chain]
         message = _canonicalize(payload)
         sig_bytes = _b64url_decode(hop_signature)
         public_key.verify(sig_bytes, message)

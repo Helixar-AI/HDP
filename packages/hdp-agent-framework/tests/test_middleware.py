@@ -235,13 +235,10 @@ class TestFunctionMiddlewareScopeEnforcement:
         await _process(mw)
         await _function_middleware_call(mw, "forbidden_tool")
         token = mw.export_token()
-        violations = (
-            token.get("scope", {})
-            .get("extensions", {})
-            .get("scope_violations", [])
-        )
-        assert len(violations) >= 1
-        assert any(v.get("tool") == "forbidden_tool" for v in violations)
+        assert token["scope"].get("extensions") is None
+        assert token["chain"][-1]["agent_id"] == "forbidden_tool"
+        assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: forbidden_tool"
+        assert token["chain"][-1]["hop_signature"]
 
     @pytest.mark.asyncio
     async def test_strict_mode_raises_on_unauthorized_tool(self):

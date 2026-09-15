@@ -4,7 +4,7 @@
 
 Long-running agentic sessions present a challenge: the initial scope may be too narrow by the time the task is underway, `max_hops` may be exhausted before the task completes, or a new high-risk action emerges that requires fresh human approval.
 
-HDP's answer is **re-authorization**: each scope change is a new human authorization event, producing a new token that references its predecessor.
+HDP's answer is **re-authorization**: each scope change is a new signed delegation record, producing a new token that references its predecessor.
 
 ## Core Principle
 
@@ -58,7 +58,7 @@ The re-auth token:
 
 ## Token Lifetime Guidance
 
-Short-lived tokens are the revocation mechanism. Do not issue long-lived tokens and rely on re-authorization to compensate.
+HDP defines no default token lifetime. Choose the shortest lifetime the task permits and maintain verifier-local revocation state keyed by `token_id`. Re-authorization records lineage and scope evolution; it does not revoke the earlier token. Revoke that token explicitly wherever live use must stop.
 
 | Session type | Recommended `expiresInMs` |
 |---|---|
@@ -77,10 +77,11 @@ T1 (original, max_hops: 2)
        └─ T3 (re-auth, parent_token_id: T2, high-risk approval)
 ```
 
-Each link is a signed human decision. Verifiers who need the full history verify each token independently.
+Each link is a separately signed issuer record. Verifiers who need the full history verify each token independently and retain the session and revocation context needed to interpret historical acceptance.
 
 ## What Re-Authorization Is Not
 
-- **Not a mutable token.** The original token is never modified. It remains valid until its `expires_at`.
+- **Not a mutable token.** The original token is never modified. It remains eligible for live acceptance until it expires or is placed in a verifier's local revocation state.
 - **Not automatic.** `issueReAuthToken` must be called by the system that obtained the human's approval. The agent cannot re-authorize itself.
 - **Not a capability grant.** Re-authorization records that a human approved an expanded scope; it does not enforce that scope at runtime.
+- **Not revocation.** Issuing a successor records lineage but does not invalidate its predecessor.

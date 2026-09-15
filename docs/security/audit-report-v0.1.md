@@ -1,13 +1,15 @@
-# HDP Reference Implementation — Security Audit Report
+# HDP Reference Implementation — Initial Security Audit Report
 
 **Date:** 2026-03-26
 **Scope:** src/crypto/, src/token/, src/chain/, src/privacy/
+
+This report is the initial v0.1 audit baseline. The current verifier additionally distinguishes live acceptance from historical record integrity, supports verifier-local revocation, validates presenter identity when supplied, and enforces tighter lifecycle and chain-structure rules. See [Protocol Boundaries and Audit Semantics](../audit-semantics.md) for the current model.
 
 ## Findings — PASS
 
 ### 12.1 Token Forgery
 Tokens signed by an attacker key fail verification against the legitimate public key.
-Root signature covers canonical JSON of header+principal+scope; any modification invalidates the signature.
+The root signature covers the canonical unsigned issuance token, including `hdp` and the empty issuance-time chain; any modification of the signed fields invalidates the signature.
 Test: tests/security/token-forgery.test.ts
 
 ### 12.2 Prompt Injection via Natural Language Fields
@@ -25,7 +27,7 @@ verifyToken() checks session_id against currentSessionId before PoH verification
 Test: tests/security/replay-attack.test.ts
 
 ### 12.7 Replay Attack (expiry)
-verifyToken() checks expires_at at step 2. Expired tokens rejected regardless of signature validity.
+verifyToken() rejects live use at or after `expires_at`. Expiry is reported separately from signature integrity during historical audit.
 Test: tests/security/replay-attack.test.ts
 
 ## Noted Gaps — Application Layer Concerns (out of scope for SDK)
@@ -55,6 +57,6 @@ Test: tests/security/replay-attack.test.ts
 | Confused Deputy | §12.8 | `tests/unit/chain-extender.test.ts` | PARTIAL — max_hops enforced; minimum-scope design at authorization time is application concern |
 | Adaptive Retry | §12.9 | — | GAP — action_count constraints must be enforced by calling application |
 | Transport Security | §12.10 | — | GAP — TLS enforcement is a deployment concern, not SDK concern |
-| Offline Verification (liveness) | §12.7 (extended) | `tests/security/offline-verification.test.ts` | PASS — full chain verification requires zero network calls |
+| Offline Verification (liveness) | §12.7 (extended) | `tests/security/offline-verification.test.ts` | PASS — full chain verification requires zero network calls; revocation state is verifier-local |
 
 **Summary:** 7 threats directly tested (6 security tests + 1 unit test), 1 partial (max_hops), 4 application-layer gaps documented.

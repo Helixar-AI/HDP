@@ -158,8 +158,8 @@ class HdpMiddleware:
         Called after each agent step via step_callback. Inspects AgentAction.tool
         against scope.authorized_tools.
 
-        - strict=False (default): logs a warning and records the violation in the
-          token's scope extensions so it appears in the audit trail.
+        - strict=False (default): logs a warning and appends a signed hop that
+          identifies the attempted out-of-scope action.
         - strict=True: raises HDPScopeViolationError, halting the crew.
         """
         # Only check AgentAction objects (not AgentFinish)
@@ -312,18 +312,25 @@ class HdpMiddleware:
         return d
 
     def _record_scope_violation(self, tool: str) -> None:
-        """Record a scope violation in the token's scope extensions for audit visibility."""
+        """Append a signed hop describing an out-of-scope attempt."""
         if self._token is None:
             return
-        scope = self._token.get("scope", {})
-        extensions = scope.get("extensions", {})
-        violations: list = extensions.get("scope_violations", [])
-        violations.append({"tool": tool, "timestamp": int(time.time() * 1000)})
-        updated_extensions = {**extensions, "scope_violations": violations}
-        self._token = {
-            **self._token,
-            "scope": {**scope, "extensions": updated_extensions},
+        max_hops = self._scope.max_hops
+        if max_hops is not None and self._hop_seq >= max_hops:
+            logger.warning("HDP max_hops (%d) reached; violation hop could not be appended", max_hops)
+            return
+        self._hop_seq += 1
+        unsigned_hop = {
+            "seq": self._hop_seq,
+            "agent_id": tool,
+            "agent_type": "tool-executor",
+            "timestamp": int(time.time() * 1000),
+            "action_summary": f"attempted out-of-scope tool call: {tool}",
+            "parent_hop": self._hop_seq - 1,
         }
+        current_chain = self._token.get("chain", [])
+        hop_sig = sign_hop([*current_chain, unsigned_hop], self._token["signature"]["value"], self._signing_key)
+        self._token = {**self._token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]}
 
     def _save_token_to_storage(self) -> None:
         """Design consideration #5 — persist token to crewAI's storage directory.

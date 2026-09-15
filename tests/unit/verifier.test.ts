@@ -24,8 +24,11 @@ describe('verifyToken', () => {
 
   it('INVALID for an expired token', async () => {
     const { token, publicKey } = await makeToken()
-    const expired = { ...token, header: { ...token.header, expires_at: Date.now() - 1000 } }
-    const result = await verifyToken(expired as any, { publicKey, currentSessionId: 'sess-abc' })
+    const result = await verifyToken(token, {
+      publicKey,
+      currentSessionId: 'sess-abc',
+      now: token.header.expires_at,
+    })
     expect(result.valid).toBe(false)
     expect(result.error?.code).toBe('TOKEN_EXPIRED')
   })

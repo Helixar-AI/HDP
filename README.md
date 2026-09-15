@@ -3,7 +3,7 @@
 # HDP — Human Delegation Provenance Protocol
 
 **A cryptographic chain-of-custody protocol for agentic AI systems.**
-_Every action an AI agent takes, traceable back to the human who authorized it._
+_Signed delegation context and agent activity, preserved for audit._
 
 <img src="docs/assets/hdp.png" alt="HDP — Human Delegation Provenance Protocol" width="100%"/>
 
@@ -42,13 +42,19 @@ _Every action an AI agent takes, traceable back to the human who authorized it._
 
 ## What is HDP?
 
-HDP (Human Delegation Provenance) is an open protocol that captures, structures, cryptographically signs, and verifies the human authorization context in agentic AI systems.
+HDP (Human Delegation Provenance) is an open protocol that captures, structures, cryptographically signs, and verifies records of human delegation context in agentic AI systems.
 
-When a person authorizes an AI agent to act — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain of custody from the authorizing human to every downstream action. The full delegation trail is encoded in a compact, self-contained token signed with Ed25519 and canonicalized with RFC 8785. Verification is fully offline: it requires only a public key, no central registry, no network call.
+When a person delegates a task to an AI agent — and that agent delegates to another agent, and another — HDP creates a tamper-evident chain from the issuer's signed statement to the activity each hop records. The full trail is encoded in a compact, self-contained token signed with Ed25519 and canonicalized with RFC 8785. Verification is fully offline: it uses a trusted issuer public key, local session context, the current time, and verifier-local revocation state, with no central registry or network call.
 
-**Who it is for:** developers building AI agents with Grok/xAI, CrewAI, MCP servers, or any OpenAI-compatible API who need accountability, auditability, and proof of human authorization at every step.
+**Who it is for:** developers building AI agents with Grok/xAI, CrewAI, MCP servers, or any OpenAI-compatible API who need accountable, auditable records of delegation context and subsequent agent activity.
 
-**Standardization:** HDP is specified in the IETF individual Internet-Draft [draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) (Informational). The wire protocol described there is v0.1 and matches this implementation.
+**Boundary:** HDP is not an authorization protocol, capability, access token, or credential. A valid token proves that its signed record is authentic and intact; it does not grant access, prove that an action occurred, or show that a named delegate consented. Services must make authorization decisions using their own access-control system.
+
+**Standardization:** HDP is specified in the IETF individual Internet-Draft [draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) (Informational). Revision -02 tightens verification, revocation, transport, and audit requirements while keeping the v0.1 token structure and signature payloads unchanged.
+
+→ [Protocol boundaries, live verification, and historical audit](./docs/audit-semantics.md)
+
+> **Revision -02 compatibility:** Use the standard HTTP field names `HDP-Token` and `HDP-Token-Ref`. Maintained middleware accepts the former `X-HDP-*` names as deprecated input aliases during migration. Earlier SDK releases also signed different, non-interoperable root and hop payload shapes; tokens they emitted must be reissued because corrected implementations do not silently fall back to the earlier signature scheme.
 
 ---
 
@@ -144,7 +150,7 @@ import {
 // 1. Generate a key pair for the issuer
 const { privateKey, publicKey } = await generateKeyPair();
 
-// 2. Issue a token (the human authorization event)
+// 2. Issue a token (the issuer's signed record of the delegation context)
 let token = await issueToken({
   sessionId: "sess-20260326-abc123",
   principal: {
@@ -541,7 +547,7 @@ print(result.valid, result.hop_count, result.violations)
 | 2 | **Shared session** | All three layers read/write the same `ContextVar` — a token issued by the instrumentation handler is visible to the node postprocessor in the same asyncio task. |
 | 3 | **Scope enforcement** | `strict=True` raises `HDPScopeViolationError` on out-of-scope tool calls; default logs and records in the audit trail. |
 | 4 | **Data classification** | Postprocessor checks token `data_classification` against a 4-level hierarchy: `public < internal < confidential < restricted`. |
-| 5 | **Observability overlap** | HDP complements Arize Phoenix and Langfuse — they record *what* happened; HDP records *who authorized it* with a cryptographic proof. |
+| 5 | **Observability overlap** | HDP complements Arize Phoenix and Langfuse — they observe runtime activity; HDP authenticates the issuer's delegation record and signed chain entries. |
 
 → [Full LlamaIndex integration docs](./packages/llama-index-callbacks-hdp/README.md)
 
@@ -589,6 +595,7 @@ HDP verification requires **zero network calls**. The complete trust state is:
 - The issuer's Ed25519 public key (32 bytes)
 - The current `session_id` (string)
 - The current time (for expiry check)
+- The verifier's local set of revoked `token_id` values
 
 ```typescript
 import { verifyToken } from "@helixar_ai/hdp";
@@ -598,10 +605,55 @@ import { verifyToken } from "@helixar_ai/hdp";
 const result = await verifyToken(token, {
   publicKey, // locally held — no fetch
   currentSessionId: "sess-20260326-abc", // locally known — no registry
+  revokedTokenIds: localRevokedTokenIds, // ReadonlySet<string> or local callback
+  expectedPresenterAgentId: "tool-executor-v1", // when transport authenticates the caller
 });
 ```
 
-This is architecturally enforced: the 7-step verification pipeline has no I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`) which intercepts all network calls and asserts none are made during verification.
+This is architecturally enforced: the verification pipeline has no required I/O operations. It is proven by the test suite (`tests/security/offline-verification.test.ts`), which verifies a full chain using only local inputs.
+
+### Historical audit
+
+```typescript
+import { auditToken, computeTokenDigest } from "@helixar_ai/hdp";
+
+const report = await auditToken(archivedToken, {
+  publicKey: archivedIssuerKey,
+  evidence: {
+    authenticated: true,
+    tokenDigest: computeTokenDigest(archivedToken),
+    sessionId: archivedToken.header.session_id,
+    verifierId: "payments-gateway-1",
+    evaluatedAt: receipt.evaluatedAt,
+    decision: receipt.decision,
+    revoked: receipt.revoked,
+    policyAccepted: receipt.policyAccepted,
+  },
+});
+
+// Reported independently:
+// report.recordIntegrity.status
+// report.currentAcceptance.status
+// report.historicalAcceptance.status
+```
+
+### Immutable token references
+
+```typescript
+import {
+  InMemoryTokenStore,
+  storeToken,
+  storeTokenByReference,
+  resolveToken,
+} from "@helixar_ai/hdp";
+
+const store = new InMemoryTokenStore();
+const tokenIdRef = await storeToken(store, token); // immutable first snapshot
+const digestRef = await storeTokenByReference(store, extendedToken); // sha256:...
+const snapshot = await resolveToken(store, digestRef); // digest checked on resolution
+```
+
+UUID and digest references are write-once snapshots. Extending a token preserves its `token_id`, so later chain states must use a new content-addressed reference instead of overwriting the UUID mapping.
 
 ---
 
@@ -629,7 +681,7 @@ const reAuth = await issueReAuthToken({
 | -------------------------- | ------------------------- |
 | Short interactive task     | 15–60 minutes             |
 | Background batch job       | 4–8 hours                 |
-| Default                    | 24 hours                  |
+| SDK fallback (set explicitly in production) | 24 hours       |
 | High-risk / elevated scope | 5–15 minutes              |
 
 ---
@@ -646,9 +698,12 @@ const t2 = await issueReAuthToken({ original: t1, /* Bob co-authorizes */ signin
 
 const result = await verifyPrincipalChain(
   [{ token: t1, publicKey: alicePublicKey }, { token: t2, publicKey: bobPublicKey }],
-  { currentSessionId: 'sess-joint-approval' }
+  {
+    currentSessionId: 'sess-joint-approval',
+    relationshipContext: { type: 'joint_authorization', authenticated: true },
+  }
 )
-// result.valid === true, t2.header.parent_token_id === t1.header.token_id
+// result.valid === true, result.relationship === 'joint_authorization'
 ```
 
 **HDP v0.2 preview — `CoAuthorizationRequest`:** Simultaneous multi-signature using a threshold scheme (FROST / Schnorr multisig) is planned for v0.2.
@@ -669,15 +724,17 @@ const auditEntry = buildAuditSafe(token); // token_id + intent + chain summary
 
 ## Verification Pipeline
 
-`verifyToken()` runs a 7-step pipeline defined in HDP spec §7.3:
+`verifyToken()` runs the live-acceptance pipeline defined by HDP:
 
-1. Version check
-2. Expiry (`expires_at`)
-3. Root signature (Ed25519 over header + principal + scope)
-4. Hop signatures — mandatory per §6.3 Rule 6 (each hop signs cumulative chain state)
+1. Input and version checks, including `header.version === hdp`
+2. Lifecycle: `issued_at <= now < expires_at` and local revocation by `token_id`
+3. Root signature (Ed25519 over the canonical unsigned token as it existed at issuance, with an empty chain)
+4. Hop structure and signatures, including sequence, parent links, and nondecreasing timestamps
 5. `max_hops` constraint — the issuer chooses this value; HDP defines no fixed or maximum number of hops, and omitting it leaves chain length unbounded
-6. Session ID binding (replay defense)
-7. Proof-of-Humanity credential (optional, application-supplied callback)
+6. Session ID binding (cross-session replay defense)
+7. Optional application checks, such as Proof of Humanity and presenter identity
+
+Live acceptance is separate from historical audit. An expired or revoked token may still have valid record integrity, while evidence of historical acceptance can remain indeterminate. See [audit semantics](./docs/audit-semantics.md).
 
 ---
 
@@ -685,7 +742,7 @@ const auditEntry = buildAuditSafe(token); // token_id + intent + chain summary
 
 The [Intent Provenance Protocol](https://datatracker.ietf.org/doc/html/draft-haberkamp-ipp-01) (draft-haberkamp-ipp-01) solves the same problem with different trade-offs. The critical difference: **IPP requires agents to poll a central revocation registry every 5 seconds**. If the registry is unreachable, agents cannot safely act. Every IPP token is also cryptographically anchored to `ipp.khsovereign.com/keys/founding_public.pem` — making fully self-sovereign deployment impossible.
 
-HDP verification is fully offline. It requires only a public key and a session ID. No registry. No central endpoint. No third-party trust anchor.
+HDP verification is fully offline. It requires a trusted issuer public key, session context, current time, and verifier-local revocation state. No central registry, central endpoint, or third-party trust anchor is required at verification time.
 
 → [Full technical comparison: COMPARISON.md](./COMPARISON.md)
 
@@ -695,12 +752,14 @@ HDP verification is fully offline. It requires only a public key and a session I
 
 **HDP stops at provenance. It does not enforce.**
 
-HDP records that a human authorized an agent to act, with what scope, through what chain. It does not:
+HDP records an issuer's statement about human delegation context and the activity the issuer subsequently recorded. It does not:
 
 - Prevent an agent from exceeding its declared scope at runtime
 - Enforce `authorized_tools` or `data_classification` constraints at the model layer
-- Make revocation decisions
+- Decide who may revoke or distribute revocation instructions
 - Provide a central authority
+- Prove that an action occurred or that a named delegate consented
+- Prove that the supplied chain is the only or final branch
 
 Applications that need runtime enforcement should treat HDP tokens as audit input and implement enforcement at the application layer.
 

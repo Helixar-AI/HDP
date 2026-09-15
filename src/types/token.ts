@@ -30,10 +30,11 @@ export interface HdpScope {
 }
 
 export interface HdpSignature {
-  alg: 'Ed25519' | 'ES256'
+  alg: 'Ed25519'
   kid: string
   value: string
-  signed_fields: ['header', 'principal', 'scope']
+  /** @deprecated Legacy SDK metadata. It is not part of the HDP v0.1 signature object. */
+  signed_fields?: ['header', 'principal', 'scope']
 }
 
 export interface HdpToken {

@@ -1,6 +1,6 @@
 export type DataClassification = 'public' | 'internal' | 'confidential' | 'restricted'
 export type AgentType = 'orchestrator' | 'sub-agent' | 'tool-executor' | 'custom'
-export type PrincipalIdType = 'email' | 'uuid' | 'did' | 'poh' | 'opaque'
+export type PrincipalIdType = 'email' | 'uuid' | 'did' | 'poh' | 'opaque' | `x-${string}`
 
 export interface TimeWindowConstraint {
   type: 'time_window'

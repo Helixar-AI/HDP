@@ -136,10 +136,32 @@ describe('hdpMiddleware', () => {
     const wrapped = hdpMiddleware(handler, { hdp_required: true })
     const response = await wrapped({ content: 'hello' })
     expect((response as any).error).toMatch('HDP_REQUIRED')
+    expect((response as any).error).toContain('HDP-Token')
     expect(handler).not.toHaveBeenCalled()
   })
 
   it('calls onValid and passes through with a valid token', async () => {
+    const { token, publicKey } = await makeToken()
+    const encoded = encodeHeader(token)
+    const onValid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ content: 'ok' })
+
+    const wrapped = hdpMiddleware(handler, {
+      verify: { publicKey, currentSessionId: 'sess-autogen-test' },
+      hdp_required: true,
+      onValid,
+    })
+
+    const response = await wrapped({
+      headers: { 'HDP-Token': encoded, 'X-HDP-Token': 'not-a-token' },
+      content: 'hello',
+    })
+    expect(response).toEqual({ content: 'ok' })
+    expect(onValid).toHaveBeenCalledOnce()
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('accepts the deprecated X-prefixed token header as inbound compatibility', async () => {
     const { token, publicKey } = await makeToken()
     const encoded = encodeHeader(token)
     const onValid = vi.fn()
@@ -158,13 +180,13 @@ describe('hdpMiddleware', () => {
   })
 
   it('blocks message with an expired token in required mode', async () => {
-    const { token, publicKey } = await makeToken(-1000)
+    const { token, publicKey } = await makeToken(1)
     const encoded = encodeHeader(token)
     const onInvalid = vi.fn()
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-autogen-test', now: Date.now() + 100 },
+      verify: { publicKey, currentSessionId: 'sess-autogen-test', now: token.header.expires_at },
       hdp_required: true,
       onInvalid,
     })

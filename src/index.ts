@@ -12,7 +12,10 @@ export type {
 } from './types/constraints.js'
 export {
   HdpError, HdpTokenExpiredError, HdpSignatureInvalidError,
-  HdpChainIntegrityError, HdpSessionMismatchError, HdpMaxHopsExceededError, HdpSchemaError
+  HdpTokenNotYetValidError, HdpTokenRevokedError,
+  HdpUnsupportedVersionError, HdpVersionMismatchError,
+  HdpChainIntegrityError, HdpSessionMismatchError, HdpPresenterMismatchError,
+  HdpMaxHopsExceededError, HdpSchemaError
 } from './types/errors.js'
 
 // Schema validation
@@ -28,23 +31,58 @@ export { TokenBuilder } from './token/builder.js'
 export { issueToken } from './token/issuer.js'
 export type { IssueTokenOptions } from './token/issuer.js'
 export { verifyToken } from './token/verifier.js'
-export type { VerificationOptions, VerificationResult } from './token/verifier.js'
+export {
+  auditToken,
+  computeTokenDigest,
+} from './token/verifier.js'
+export type {
+  RevocationState,
+  VerificationOptions,
+  VerificationResult,
+  RecordIntegrityStatus,
+  RecordIntegrityReport,
+  AcceptanceStatus,
+  AcceptanceReport,
+  HistoricalAcceptanceStatus,
+  HistoricalAcceptanceEvidence,
+  HistoricalAcceptanceReport,
+  HistoricalAuditOptions,
+  HistoricalAuditReport,
+} from './token/verifier.js'
 export { issueReAuthToken } from './token/reauth.js'
 export type { ReAuthOptions, ReAuthToken } from './token/reauth.js'
 
 // Multi-principal delegation
 export { verifyPrincipalChain } from './token/multi-principal.js'
-export type { PrincipalChainEntry, PrincipalChainVerificationResult, CoAuthorizationRequest } from './token/multi-principal.js'
+export type {
+  PrincipalChainEntry,
+  PrincipalChainVerificationOptions,
+  PrincipalChainVerificationResult,
+  CoAuthorizationRequest,
+} from './token/multi-principal.js'
 
 // Chain management
 export { extendChain } from './chain/extender.js'
 export { validateChain } from './chain/validator.js'
 
 // Transport
-export { encodeHeader, decodeHeader, HDP_HEADER, HDP_REF_HEADER } from './transport/http.js'
+export {
+  encodeHeader,
+  decodeHeader,
+  HDP_HEADER,
+  HDP_REF_HEADER,
+  HDP_LEGACY_HEADER,
+  HDP_LEGACY_REF_HEADER,
+} from './transport/http.js'
 export type { TokenStore } from './transport/store.js'
 export { InMemoryTokenStore } from './transport/store.js'
-export { storeToken, resolveToken } from './transport/reference.js'
+export {
+  storeToken,
+  storeTokenByReference,
+  resolveToken,
+  contentAddressedReference,
+  TokenReferenceIntegrityError,
+} from './transport/reference.js'
 
 // Privacy
 export { stripPrincipal, buildAuditSafe, redactPii } from './privacy/redactor.js'

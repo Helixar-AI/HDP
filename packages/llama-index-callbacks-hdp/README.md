@@ -2,7 +2,7 @@
 
 HDP (Human Delegation Provenance) integration for LlamaIndex — cryptographic authorization provenance for agents and RAG pipelines.
 
-HDP answers the question that observability tools like Arize Phoenix and Langfuse cannot: **who authorized this agent run, under what scope, and can you prove it offline?**
+HDP complements observability tools like Arize Phoenix and Langfuse with an offline-verifiable record of the issuer-declared delegation context and subsequent signed chain entries.
 
 Every tool call, retrieval step, and LLM invocation is recorded in a tamper-evident, cryptographically signed delegation chain. The chain is fully verifiable offline — no network calls, no central registry.
 
@@ -74,7 +74,7 @@ if result.valid:
 | Capability | Arize / Langfuse | HDP |
 |---|---|---|
 | Records what happened | ✓ | ✓ |
-| Records who authorized it | ✗ | ✓ |
+| Records issuer-declared delegation context | ✗ | ✓ |
 | Cryptographically signed | ✗ | ✓ |
 | Verifiable offline | ✗ | ✓ |
 | Scope enforcement | ✗ | ✓ |

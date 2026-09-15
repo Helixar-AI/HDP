@@ -211,7 +211,8 @@ class HdpCallbackHandler(BaseCallbackHandler):
         tool_name: str = getattr(tool, "name", str(tool)) if tool is not None else "unknown-tool"
 
         authorized = self._scope.authorized_tools
-        if authorized is not None and tool_name not in authorized:
+        out_of_scope = authorized is not None and tool_name not in authorized
+        if out_of_scope:
             if self._strict:
                 raise HDPScopeViolationError(tool_name, authorized)
             logger.warning(
@@ -219,45 +220,27 @@ class HdpCallbackHandler(BaseCallbackHandler):
                 tool_name,
                 authorized,
             )
-            self._record_scope_violation(tool_name)
-
-        self._extend_chain(action_summary=f"tool_call: {tool_name}")
+        summary = (
+            f"attempted out-of-scope tool call: {tool_name}"
+            if out_of_scope
+            else f"tool_call: {tool_name}"
+        )
+        self._extend_chain(action_summary=summary)
 
     def _handle_tool_end(self, payload: dict) -> None:
         output = payload.get(EventPayload.FUNCTION_OUTPUT)
         if output is not None:
-            token = get_token()
-            if token and token.get("chain"):
-                last_hop = token["chain"][-1]
-                last_hop["metadata"] = {
-                    **last_hop.get("metadata", {}),
-                    "tool_output_preview": str(output)[:200],
-                }
+            self._extend_chain(action_summary=f"observed tool output: {str(output)[:200]}")
 
     def _handle_llm_start(self, payload: dict) -> None:
         model_name = payload.get(EventPayload.MODEL_NAME) or payload.get("model_name", "")
         if model_name:
-            token = get_token()
-            if token and token.get("chain"):
-                last_hop = token["chain"][-1]
-                last_hop["metadata"] = {
-                    **last_hop.get("metadata", {}),
-                    "llm_model": model_name,
-                }
+            self._extend_chain(action_summary=f"observed model invocation: {model_name}")
 
     def _handle_query_start(self, payload: dict) -> None:
         query_str = payload.get(EventPayload.QUERY_STR, "")
         if query_str:
-            token = get_token()
-            if token:
-                scope = token.get("scope", {})
-                token["scope"] = {
-                    **scope,
-                    "extensions": {
-                        **scope.get("extensions", {}),
-                        "query_intent": str(query_str)[:500],
-                    },
-                }
+            self._extend_chain(action_summary=f"observed query: {str(query_str)[:500]}")
 
     def _handle_exception(self, payload: dict) -> None:
         exc = payload.get(EventPayload.EXCEPTION)
@@ -293,26 +276,10 @@ class HdpCallbackHandler(BaseCallbackHandler):
         logger.debug("HDP hop %d recorded: %s", self._hop_seq, action_summary)
 
     def _record_scope_violation(self, tool: str) -> None:
-        token = get_token()
-        if token is None:
-            return
-        scope = token.get("scope", {})
-        extensions = scope.get("extensions", {})
-        violations: list = extensions.get("scope_violations", [])
-        violations.append({"tool": tool, "timestamp": int(time.time() * 1000)})
-        token["scope"] = {**scope, "extensions": {**extensions, "scope_violations": violations}}
-        set_token(token)
+        self._extend_chain(action_summary=f"attempted out-of-scope tool call: {tool}")
 
     def _record_anomaly(self, description: str) -> None:
-        token = get_token()
-        if token is None:
-            return
-        scope = token.get("scope", {})
-        extensions = scope.get("extensions", {})
-        anomalies: list = extensions.get("anomalies", [])
-        anomalies.append({"description": description, "timestamp": int(time.time() * 1000)})
-        token["scope"] = {**scope, "extensions": {**extensions, "anomalies": anomalies}}
-        set_token(token)
+        self._extend_chain(action_summary=f"observed anomaly: {description}")
 
     def _build_principal_dict(self) -> dict:
         d: dict = {"id": self._principal.id, "id_type": self._principal.id_type}

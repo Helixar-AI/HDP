@@ -2,9 +2,10 @@
 /**
  * Multi-principal delegation utilities.
  *
- * HDP v0.1 supports one principal per token. For actions that require
- * joint authorization from two humans, the pattern is sequential token
- * chaining: Human A issues T1; Human B issues T2 with parent_token_id: T1.
+ * HDP v0.1 supports one principal per token. Sequential token chaining can
+ * link records from multiple principals: Human A issues T1; Human B issues
+ * T2 with parent_token_id: T1. The link's meaning comes from trusted
+ * application context; parent_token_id alone does not establish joint approval.
  *
  * verifyPrincipalChain() walks the parent_token_id chain and verifies
  * each token's root signature against the corresponding public key.
@@ -26,11 +27,21 @@ export interface PrincipalChainEntry {
 
 export interface PrincipalChainVerificationResult {
   valid: boolean
+  /** Meaning established by trusted application context, not by the parent link alone. */
+  relationship: 'joint_authorization' | 'unknown'
   /** Index of the first token that failed verification, if any. */
   failedAt?: number
   error?: HdpError
   /** Individual result per token in the chain order. */
   results: VerificationResult[]
+}
+
+export interface PrincipalChainVerificationOptions extends Omit<VerificationOptions, 'publicKey'> {
+  relationshipContext?: {
+    type: 'joint_authorization'
+    /** The application has authenticated and integrity-protected this context. */
+    authenticated: boolean
+  }
 }
 
 /**
@@ -47,10 +58,15 @@ export interface PrincipalChainVerificationResult {
  */
 export async function verifyPrincipalChain(
   chain: PrincipalChainEntry[],
-  opts: Omit<VerificationOptions, 'publicKey'>
+  opts: PrincipalChainVerificationOptions,
 ): Promise<PrincipalChainVerificationResult> {
+  const relationship = opts.relationshipContext?.type === 'joint_authorization'
+    && opts.relationshipContext.authenticated
+    ? 'joint_authorization'
+    : 'unknown'
+
   if (chain.length === 0) {
-    return { valid: false, results: [], error: new HdpChainIntegrityError('principal chain must contain at least one entry') }
+    return { valid: false, relationship, results: [], error: new HdpChainIntegrityError('principal chain must contain at least one entry') }
   }
 
   const results: VerificationResult[] = []
@@ -65,7 +81,7 @@ export async function verifyPrincipalChain(
       const err = new HdpChainIntegrityError(
         `token at index ${i} has session_id '${token.header.session_id}', expected '${rootSessionId}'`
       )
-      return { valid: false, failedAt: i, error: err, results }
+      return { valid: false, relationship, failedAt: i, error: err, results }
     }
 
     // Verify parent_token_id linkage (from index 1 onwards)
@@ -78,7 +94,7 @@ export async function verifyPrincipalChain(
           message: `CHAIN_INTEGRITY: token at index ${i} has parent_token_id '${actualParent}', expected '${expectedParent}'`,
           code: 'CHAIN_INTEGRITY',
         } as unknown as HdpError
-        return { valid: false, failedAt: i, error: err, results }
+        return { valid: false, relationship, failedAt: i, error: err, results }
       }
     }
 
@@ -86,11 +102,11 @@ export async function verifyPrincipalChain(
     results.push(result)
 
     if (!result.valid) {
-      return { valid: false, failedAt: i, error: result.error, results }
+      return { valid: false, relationship, failedAt: i, error: result.error, results }
     }
   }
 
-  return { valid: true, results }
+  return { valid: true, relationship, results }
 }
 
 // ---------------------------------------------------------------------------

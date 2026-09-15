@@ -239,18 +239,12 @@ class HdpMiddleware:
         return d
 
     def _record_scope_violation(self, tool: str) -> None:
-        """Record a scope violation in the token's scope extensions for audit visibility."""
-        if self._token is None:
-            return
-        scope = self._token.get("scope", {})
-        extensions = scope.get("extensions", {})
-        violations: list = extensions.get("scope_violations", [])
-        violations.append({"tool": tool, "timestamp": int(time.time() * 1000)})
-        updated_extensions = {**extensions, "scope_violations": violations}
-        self._token = {
-            **self._token,
-            "scope": {**scope, "extensions": updated_extensions},
-        }
+        """Append a signed hop describing an out-of-scope attempt."""
+        self._extend_chain(
+            agent_id=tool,
+            action_summary=f"attempted out-of-scope tool call: {tool}",
+            agent_type="tool-executor",
+        )
 
 
 class HdpCallbackHandler(BaseCallbackHandler):

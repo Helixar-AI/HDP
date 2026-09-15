@@ -36,20 +36,20 @@ def _canonicalize(obj: Any) -> bytes:
 
 
 def _sign_root(unsigned_token: dict, private_key_bytes: bytes, kid: str) -> dict:
-    subset = {f: unsigned_token[f] for f in ["header", "principal", "scope"] if f in unsigned_token}
-    message = _canonicalize(subset)
+    payload = {f: unsigned_token[f] for f in ["hdp", "header", "principal", "scope"]}
+    payload["chain"] = []
+    message = _canonicalize(payload)
     key = Ed25519PrivateKey.from_private_bytes(private_key_bytes)
     sig_bytes = key.sign(message)
     return {
         "alg": "Ed25519",
         "kid": kid,
         "value": _b64url(sig_bytes),
-        "signed_fields": ["header", "principal", "scope"],
     }
 
 
 def _sign_hop(cumulative_chain: list[dict], root_sig_value: str, private_key_bytes: bytes) -> str:
-    payload = {"chain": cumulative_chain, "root_sig": root_sig_value}
+    payload = [root_sig_value, *cumulative_chain]
     message = _canonicalize(payload)
     key = Ed25519PrivateKey.from_private_bytes(private_key_bytes)
     return _b64url(key.sign(message))
@@ -57,8 +57,11 @@ def _sign_hop(cumulative_chain: list[dict], root_sig_value: str, private_key_byt
 
 def _verify_root(token: dict, public_key: Ed25519PublicKey) -> bool:
     try:
-        subset = {f: token[f] for f in ["header", "principal", "scope"] if f in token}
-        message = _canonicalize(subset)
+        if token["signature"].get("alg") != "Ed25519":
+            return False
+        payload = {f: token[f] for f in ["hdp", "header", "principal", "scope"]}
+        payload["chain"] = []
+        message = _canonicalize(payload)
         sig_bytes = _b64url_decode(token["signature"]["value"])
         public_key.verify(sig_bytes, message)
         return True
@@ -73,7 +76,7 @@ def _verify_hop(
     public_key: Ed25519PublicKey,
 ) -> bool:
     try:
-        payload = {"chain": cumulative_chain, "root_sig": root_sig_value}
+        payload = [root_sig_value, *cumulative_chain]
         message = _canonicalize(payload)
         sig_bytes = _b64url_decode(hop_signature)
         public_key.verify(sig_bytes, message)

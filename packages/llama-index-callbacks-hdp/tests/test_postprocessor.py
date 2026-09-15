@@ -78,14 +78,13 @@ class TestRetrievelHopRecording:
         result = verify_chain(get_token(), pub.public_bytes_raw())
         assert result.valid
 
-    def test_without_signing_key_records_unsigned_hop(self):
+    def test_without_signing_key_does_not_record_invalid_unsigned_hop(self):
         key, _ = _generate_key()
         _issue_token(key)
         pp = HdpNodePostprocessor()  # no signing_key
         pp._postprocess_nodes(_make_nodes("public"))
         chain = get_token()["chain"]
-        assert len(chain) == 1
-        assert chain[0]["hop_signature"] == ""
+        assert chain == []
 
     def test_no_active_token_returns_nodes_unchanged(self):
         pp = HdpNodePostprocessor()
@@ -125,9 +124,12 @@ class TestDataClassificationEnforcement:
         nodes = _make_nodes("public", "restricted")  # restricted > internal
         result = pp._postprocess_nodes(nodes)
         assert len(result) == 2  # observe mode: nodes still returned
-        violations = get_token()["scope"]["extensions"]["classification_violations"]
-        assert len(violations) == 1
-        assert "restricted" in violations[0]["violated_classifications"]
+        token = get_token()
+        assert token["scope"].get("extensions") is None
+        assert token["chain"][0]["action_summary"] == (
+            "observed data-classification violation: restricted exceeds internal"
+        )
+        assert token["chain"][0]["hop_signature"]
 
     def test_strict_mode_raises_on_classification_violation(self):
         key, _ = _generate_key()

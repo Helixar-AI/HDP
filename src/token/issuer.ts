@@ -8,6 +8,7 @@ export interface IssueTokenOptions {
   scope: HdpScope
   signingKey: Uint8Array
   keyId: string
+  /** Issuer-selected lifetime. The SDK currently falls back to 24h; HDP defines no protocol default. */
   expiresInMs?: number
 }
 

@@ -132,8 +132,9 @@ class TestBeforeKickoff:
         mw, pub = _make_middleware()
         mw.before_kickoff()
         token = mw.export_token()
-        subset = {f: token[f] for f in ["header", "principal", "scope"]}
-        message = jcs.canonicalize(subset)
+        payload = {f: token[f] for f in ["hdp", "header", "principal", "scope"]}
+        payload["chain"] = []
+        message = jcs.canonicalize(payload)
         assert _verify(pub, message, token["signature"]["value"])
 
 
@@ -165,7 +166,7 @@ class TestDelegationDepth:
         token = mw.export_token()
         hop = token["chain"][0]
         unsigned_hop = {k: v for k, v in hop.items() if k != "hop_signature"}
-        payload = {"chain": [unsigned_hop], "root_sig": token["signature"]["value"]}
+        payload = [token["signature"]["value"], unsigned_hop]
         message = jcs.canonicalize(payload)
         assert _verify(pub, message, hop["hop_signature"])
 
@@ -192,14 +193,11 @@ class TestScopeEnforcement:
         mw, _ = _make_middleware(scope=ScopePolicy(intent="x", authorized_tools=["SearchTool"]))
         mw.before_kickoff()
         mw.on_step(FakeAgentAction(tool="BrowserTool"))
-        violations = (
-            mw.export_token()
-            .get("scope", {})
-            .get("extensions", {})
-            .get("scope_violations", [])
-        )
-        assert len(violations) == 1
-        assert violations[0]["tool"] == "BrowserTool"
+        token = mw.export_token()
+        assert token["scope"].get("extensions") is None
+        assert token["chain"][-1]["agent_id"] == "BrowserTool"
+        assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: BrowserTool"
+        assert token["chain"][-1]["hop_signature"]
 
     def test_strict_mode_raises(self):
         mw, _ = _make_middleware(

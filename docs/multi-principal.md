@@ -4,11 +4,11 @@
 
 Some actions are too consequential for a single human to authorize alone. Regulated industries (finance, healthcare, critical infrastructure) commonly require joint authorization — two people who must both approve before a high-risk action is taken.
 
-HDP v0.1 supports one `principal` per token. Multi-principal authorization uses **sequential token chaining**.
+HDP v0.1 supports one `principal` per token. One way to record multi-principal authorization is **sequential token chaining**.
 
 ## The Pattern: Sequential Token Chaining
 
-Human A issues token T1. Human B reviews T1, agrees, and issues T2 with `parent_token_id: T1.token_id`. Any verifier that needs both humans' authorization walks the chain and verifies both.
+Human A issues token T1. Human B reviews T1 and issues T2 with `parent_token_id: T1.token_id`. Any verifier whose policy requires both records walks the chain and verifies both. The parent link alone does not say whether T2 supersedes T1 or joins it; trusted application context must record that relationship.
 
 ```typescript
 import { issueToken, issueReAuthToken, verifyPrincipalChain } from '@helixar_ai/hdp'
@@ -29,32 +29,39 @@ const t2 = await issueReAuthToken({
 })
 // t2.header.parent_token_id === t1.header.token_id ✓
 
-// Verifier checks both humans authorized
+// Verifier checks both signed records and their parent/session linkage.
+// Application policy separately establishes that the relationship is joint authorization.
 const result = await verifyPrincipalChain(
   [
     { token: t1, publicKey: alicePublicKey },
     { token: t2, publicKey: bobPublicKey },
   ],
-  { currentSessionId: 'sess-joint-auth' }
+  {
+    currentSessionId: 'sess-joint-auth',
+    relationshipContext: { type: 'joint_authorization', authenticated: true },
+  }
 )
 
 if (!result.valid) {
   throw new Error(`Joint authorization failed at token ${result.failedAt}: ${result.error?.message}`)
 }
-// Both Alice and Bob have signed ✓ — proceed with action
+// Both issuer records verify ✓ — the service still applies its own authorization policy
+// result.relationship === 'joint_authorization'
 ```
 
 ## What verifyPrincipalChain Validates
 
-1. Each token passes full 7-step verification (root signature, hop signatures, expiry, session_id)
+1. Each token passes live verification, or historical integrity verification when auditing past records
 2. `parent_token_id` links are correct: `T[i].parent_token_id === T[i-1].token_id`
 3. All tokens share the same `session_id`
 
+The application must additionally retain authenticated context that labels each parent-child relationship as joint authorization. Without it, an auditor can establish only that the records are linked, not what the link meant.
+
 ## Properties of This Approach
 
-**Audit trail.** Each human's authorization is a separately signed artifact. Neither can deny having authorized.
+**Audit trail.** Each issuer's statement is a separately signed artifact. The signature authenticates that statement; it does not by itself prove the human interaction or the action later taken.
 
-**Sequential, not simultaneous.** Human B sees exactly what Human A signed before co-signing. This is a feature: B is confirming A's authorization, not independently authorizing the same thing.
+**Sequential, not simultaneous.** Human B can review what Human A's token records before issuing T2. Whether B confirms A's authorization, supersedes it, or establishes another relationship must come from retained application context.
 
 **Key independence.** Alice and Bob have separate key pairs. Compromise of one key does not compromise the other's authorization.
 
@@ -63,6 +70,10 @@ if (!result.valid) {
 ## Depth: Three or More Principals
 
 Extend the same pattern: T3 has `parent_token_id: T2`, T2 has `parent_token_id: T1`. Pass all three to `verifyPrincipalChain` in order.
+
+## Composition as an Alternative
+
+Applications may instead require multiple independent tokens to accompany one request. Composition is more flexible, while chaining signs the link between records. Either approach needs an authenticated receipt or policy record binding the relevant token digests to the request and stating why the records were combined.
 
 ## v0.2 Preview: Simultaneous Co-Authorization
 

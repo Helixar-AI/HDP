@@ -10,6 +10,12 @@ export async function extendChain(
   agentPrivateKey: Uint8Array
 ): Promise<HdpToken> {
   const currentChain = token.chain
+
+  // An extension must never build on a malformed or already over-limit
+  // chain.  Validate the prefix before calculating/signing the new hop so
+  // callers cannot use extension as a way to bypass chain integrity checks.
+  validateChain(currentChain, token.scope.max_hops)
+
   const nextSeq = currentChain.length + 1
 
   // Enforce max_hops BEFORE appending
@@ -26,6 +32,14 @@ export async function extendChain(
     parent_hop: ext.parent_hop,
     ...(ext.agent_fingerprint ? { agent_fingerprint: ext.agent_fingerprint } : {}),
   }
+
+  // Validate the structural rules that do not depend on the signature before
+  // asking the signer to produce a signature.  The temporary value is only
+  // used for validation and is never returned.
+  validateChain(
+    [...currentChain, { ...unsignedHop, hop_signature: 'pending' }],
+    token.scope.max_hops,
+  )
 
   // Sign over cumulative chain (including this hop) + root sig value
   const cumulativeForSigning = [...currentChain.map(h => ({ ...h })), unsignedHop]
