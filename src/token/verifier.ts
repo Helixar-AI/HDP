@@ -1,5 +1,6 @@
 import { verifyRoot, verifyHop } from '../crypto/verify.js'
 import { validateToken } from '../schema/validator.js'
+import { parseTokenJson } from '../transport/http.js'
 import { contentAddressedReference } from '../transport/token-reference.js'
 import type { HopRecord } from '../types/chain.js'
 import type { HdpToken } from '../types/token.js'
@@ -14,6 +15,9 @@ import {
 } from '../types/errors.js'
 
 export type IntegrityStep = 0 | 1 | 2 | 3 | 4 | 5
+
+/** A valid token object or serialized JSON token. Unknown runtime values report input-validation failure. */
+export type TokenInput = HdpToken | string
 
 export interface VerificationOptions {
   publicKey: Uint8Array
@@ -71,30 +75,35 @@ function versionErrorFor(token: HdpToken): HdpError | undefined {
 }
 
 function validateVerifierInput(input: unknown): { token?: HdpToken; error?: HdpError } {
+  let candidate = input
   try {
-    validateToken(input)
+    if (typeof input === 'string') {
+      candidate = parseTokenJson(input)
+    } else {
+      validateToken(input)
+    }
   } catch (error) {
     if (error instanceof HdpError) return { error }
     return { error: schemaError(error instanceof Error ? error.message : String(error)) }
   }
 
-  if (!isRecord(input)) return { error: schemaError('token must be a JSON object') }
+  if (!isRecord(candidate)) return { error: schemaError('token must be a JSON object') }
 
-  const header = input.header
+  const header = candidate.header
   if (!isRecord(header)) return { error: schemaError('header must be an object') }
 
-  const signature = input.signature
+  const signature = candidate.signature
   if (!isRecord(signature)) return { error: schemaError('signature must be an object') }
   if (typeof signature.kid !== 'string' || typeof signature.value !== 'string') {
     return { error: schemaError('signature.kid and signature.value must be strings') }
   }
 
-  const chain = input.chain
+  const chain = candidate.chain
   if (!Array.isArray(chain)) return { error: schemaError('chain must be an array') }
-  const scope = input.scope
+  const scope = candidate.scope
   if (!isRecord(scope)) return { error: schemaError('scope must be an object') }
 
-  return { token: input as unknown as HdpToken }
+  return { token: candidate as unknown as HdpToken }
 }
 
 function validateChainStructure(token: HdpToken): HdpError | undefined {
@@ -161,6 +170,8 @@ async function verifyHopSignatures(token: HdpToken, publicKey: Uint8Array): Prom
 /**
  * Verify record integrity in the six ordered draft -03 steps. The result uses
  * only the token and issuer public key, so it is independent of time and session.
+ * For object input, duplicate-name detection rests with the caller's parser;
+ * passing raw JSON text applies Section 3's duplicate-name check here.
  */
 export async function verifyToken(
   token: unknown,
@@ -195,7 +206,11 @@ export function computeTokenDigest(token: HdpToken): string {
   return contentAddressedReference(token)
 }
 
-/** Report record integrity and related audit findings without access decisions. */
+/**
+ * Report record integrity and related audit findings without access decisions.
+ * For object input, duplicate-name detection rests with the caller's parser;
+ * passing raw JSON text applies Section 3's duplicate-name check here.
+ */
 export async function auditToken(
   token: unknown,
   opts: AuditOptions = {},

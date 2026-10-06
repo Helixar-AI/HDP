@@ -37,6 +37,7 @@ export {
 } from './token/verifier.js'
 export type {
   IntegrityStep,
+  TokenInput,
   VerificationOptions,
   VerificationResult,
   AuditOptions,

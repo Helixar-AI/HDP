@@ -65,6 +65,50 @@ describe('draft -03 integrity verification', () => {
     expect(result).toMatchObject({ valid: false, failedStep: 0, error: { code: 'SCHEMA_INVALID' } })
   })
 
+  it('rejects duplicate JSON member names before parsing serialized verifier input', async () => {
+    const { token, publicKey } = await fixture()
+    const duplicateJson = JSON.stringify(token).replace('"hdp":"0.1"', '"hdp":"0.1","hdp":"0.1"')
+    const verification = await verifyToken(duplicateJson, { publicKey })
+    const report = await auditToken(duplicateJson, { publicKey, sessionId: 'draft-03-session' })
+
+    expect(verification).toMatchObject({ valid: false, failedStep: 0, error: { code: 'SCHEMA_INVALID' } })
+    if (verification.valid) throw new Error('duplicate JSON input unexpectedly verified')
+    expect(verification.error.message).toContain("duplicate JSON object member name 'hdp'")
+    expect(report).toEqual({
+      integrity: {
+        status: 'invalid',
+        failedStep: 0,
+        error: expect.objectContaining({ code: 'SCHEMA_INVALID' }),
+      },
+      recordingPeriod: { status: 'not_checked' },
+      session: { status: 'not_checked' },
+      linkedRecords: { status: 'not_checked' },
+      poh: { status: 'not_checked' },
+    })
+
+    // Parsing first discards the duplicate and reproduces the bypass this check prevents.
+    expect(await verifyToken(JSON.parse(duplicateJson), { publicKey })).toEqual({ valid: true })
+  })
+
+  it('verifies a unique serialized token and maps JSON parse errors to step 0', async () => {
+    const { token, publicKey } = await fixture()
+
+    expect(await verifyToken(JSON.stringify(token), { publicKey })).toEqual({ valid: true })
+
+    const malformedJson = `${JSON.stringify(token).slice(0, -1)},`
+    const verification = await verifyToken(malformedJson, { publicKey })
+    const report = await auditToken(malformedJson, { publicKey })
+
+    expect(verification).toMatchObject({ valid: false, failedStep: 0, error: { code: 'SCHEMA_INVALID' } })
+    expect(report).toMatchObject({
+      integrity: { status: 'invalid', failedStep: 0, error: { code: 'SCHEMA_INVALID' } },
+      recordingPeriod: { status: 'not_checked' },
+      session: { status: 'not_checked' },
+      linkedRecords: { status: 'not_checked' },
+      poh: { status: 'not_checked' },
+    })
+  })
+
   it('reports unsupported and mismatched versions at step 1', async () => {
     const { token, publicKey } = await fixture()
     const unsupported = { ...token, hdp: '9.9', header: { ...token.header, version: '9.9' } }
