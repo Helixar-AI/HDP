@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { HdpAgentWrapper, hdpMiddleware, HdpScopeViolationError, HDP_TOOLS, getHdpTools } from '../src/index.js'
+import { HdpAgentWrapper, hdpMiddleware, HDP_TOOLS, getHdpTools } from '../src/index.js'
 import { generateKeyPair, issueToken, extendChain, verifyToken, encodeHeader } from '@helixar_ai/hdp'
 
 async function makeWrapper(overrides: Record<string, unknown> = {}) {
@@ -56,7 +56,7 @@ describe('HdpAgentWrapper', () => {
     expect(token.chain[0].agent_id).toBe('researcher')
     expect(token.chain[1].agent_id).toBe('reviewer')
 
-    const result = await verifyToken(token, { publicKey, currentSessionId: 'sess-autogen-test' })
+    const result = await verifyToken(token, { publicKey })
     expect(result.valid).toBe(true)
   })
 
@@ -87,15 +87,36 @@ describe('HdpAgentWrapper', () => {
     expect(() => wrapper.onToolCall('web_search')).not.toThrow()
   })
 
-  it('throws on unauthorized tool call in strict mode', () => {
-    const wrapper = new HdpAgentWrapper({
+  it('rejects strict mode at construction because records cannot gate tool calls', () => {
+    expect(() => new HdpAgentWrapper({
       signingKey: new Uint8Array(32),
       sessionId: 's',
       principal: { id: 'u', id_type: 'opaque' },
       scope: { intent: 'x', authorized_tools: ['web_search'] },
       strict: true,
+    })).toThrow('HDP tokens are records and cannot gate tool calls')
+  })
+
+  it('records out-of-scope tool calls and lets the caller proceed', () => {
+    const onScopeViolation = vi.fn()
+    const wrapper = new HdpAgentWrapper({
+      signingKey: new Uint8Array(32),
+      sessionId: 's',
+      principal: { id: 'u', id_type: 'opaque' },
+      scope: { intent: 'x', authorized_tools: ['web_search'] },
+      onScopeViolation,
     })
-    expect(() => wrapper.onToolCall('browser_tool')).toThrow(HdpScopeViolationError)
+    const tool = vi.fn().mockReturnValue('tool ran')
+
+    wrapper.onToolCall('browser_tool')
+    const result = tool()
+
+    expect(onScopeViolation).toHaveBeenCalledWith({
+      tool: 'browser_tool',
+      authorizedTools: ['web_search'],
+    })
+    expect(result).toBe('tool ran')
+    expect(tool).toHaveBeenCalledOnce()
   })
 
   it('allows all tools when authorized_tools is undefined', () => {
@@ -131,13 +152,21 @@ describe('hdpMiddleware', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
-  it('blocks message in required mode when no token is present', async () => {
+  it('reports a missing token and still runs the handler', async () => {
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
-    const wrapped = hdpMiddleware(handler, { hdp_required: true })
+    const onMissing = vi.fn()
+    const wrapped = hdpMiddleware(handler, { onMissing })
     const response = await wrapped({ content: 'hello' })
-    expect((response as any).error).toMatch('HDP_REQUIRED')
-    expect((response as any).error).toContain('HDP-Token')
-    expect(handler).not.toHaveBeenCalled()
+    expect(response).toEqual({ content: 'ok' })
+    expect(onMissing).toHaveBeenCalledOnce()
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('rejects the removed required option at construction', () => {
+    const handler = vi.fn().mockResolvedValue({ content: 'ok' })
+    expect(() => hdpMiddleware(handler, { hdp_required: true })).toThrow(
+      'HDP tokens are records and cannot gate requests',
+    )
   })
 
   it('calls onValid and passes through with a valid token', async () => {
@@ -147,8 +176,7 @@ describe('hdpMiddleware', () => {
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-autogen-test' },
-      hdp_required: true,
+      verify: { publicKey },
       onValid,
     })
 
@@ -168,8 +196,7 @@ describe('hdpMiddleware', () => {
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-autogen-test' },
-      hdp_required: true,
+      verify: { publicKey },
       onValid,
     })
 
@@ -179,22 +206,57 @@ describe('hdpMiddleware', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
-  it('blocks message with an expired token in required mode', async () => {
-    const { token, publicKey } = await makeToken(1)
+  it('reports an integrity failure and still runs the handler', async () => {
+    const { token, publicKey } = await makeToken()
+    token.principal.id = 'tampered'
     const encoded = encodeHeader(token)
     const onInvalid = vi.fn()
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-autogen-test', now: token.header.expires_at },
-      hdp_required: true,
+      verify: { publicKey },
       onInvalid,
     })
 
     const response = await wrapped({ headers: { 'x-hdp-token': encoded }, content: 'hello' })
-    expect((response as any).error).toMatch('HDP_INVALID')
-    expect(onInvalid).toHaveBeenCalledOnce()
-    expect(handler).not.toHaveBeenCalled()
+    expect(response).toEqual({ content: 'ok' })
+    expect(onInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      failedStep: 2,
+      error: expect.any(Error),
+    }))
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('reports an undecodable token as an input finding and still runs the handler', async () => {
+    const onInvalid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ content: 'ok' })
+    const wrapped = hdpMiddleware(handler, { onInvalid })
+
+    const response = await wrapped({ headers: { 'HDP-Token': 'not-base64url' }, content: 'hello' })
+
+    expect(response).toEqual({ content: 'ok' })
+    expect(onInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      failedStep: 0,
+      error: expect.any(Error),
+    }))
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('does not treat an expired record as an integrity failure', async () => {
+    const { token, publicKey } = await makeToken(1)
+    const onInvalid = vi.fn()
+    const onValid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ content: 'ok' })
+    const wrapped = hdpMiddleware(handler, { verify: { publicKey }, onInvalid, onValid })
+
+    const response = await wrapped({ headers: { 'HDP-Token': encodeHeader(token) }, content: 'hello' })
+
+    expect(response).toEqual({ content: 'ok' })
+    expect(onValid).toHaveBeenCalledOnce()
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect(handler).toHaveBeenCalledOnce()
   })
 })
 

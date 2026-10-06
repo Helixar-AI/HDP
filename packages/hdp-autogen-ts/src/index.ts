@@ -16,6 +16,8 @@ import {
   encodeHeader,
   HDP_HEADER,
   HDP_LEGACY_HEADER,
+  HdpError,
+  HdpSchemaError,
 } from '@helixar_ai/hdp'
 import type {
   HdpToken,
@@ -31,6 +33,7 @@ import type {
 // Error
 // ---------------------------------------------------------------------------
 
+/** @deprecated Scope findings are reported and never thrown by HDP adapters. */
 export class HdpScopeViolationError extends Error {
   tool: string
   authorizedTools: string[]
@@ -54,7 +57,7 @@ export interface HdpAgentOptions {
   sessionId: string
   /** Human principal delegating authority */
   principal: { id: string; id_type: string; display_name?: string }
-  /** Authorization scope */
+  /** Scope metadata recorded on the token. */
   scope: {
     intent: string
     data_classification?: 'public' | 'internal' | 'confidential' | 'restricted'
@@ -68,8 +71,11 @@ export interface HdpAgentOptions {
   keyId?: string
   /** Token lifetime in milliseconds (default: 86400000 = 24h) */
   expiresInMs?: number
-  /** Raise on scope violations instead of logging (default: false) */
+  /** @deprecated Passing true throws because HDP records cannot gate tool calls. */
   strict?: boolean
+
+  /** Called with out-of-scope tool findings. Findings do not stop tool calls. */
+  onScopeViolation?: (finding: { tool: string; authorizedTools: string[] }) => void
 }
 
 export interface AutoGenMessage {
@@ -94,12 +100,14 @@ export type AutoGenHandler = (message: AutoGenMessage) => Promise<AutoGenMessage
 export interface HdpMiddlewareOptions {
   /** Verification options for token validation */
   verify?: VerificationOptions
-  /** When true, messages without a valid HDP token are rejected (default: false) */
+  /** @deprecated Passing true throws because HDP records cannot gate requests. */
   hdp_required?: boolean
-  /** Called when a valid HDP token is present */
+  /** Called when decoding succeeds and any configured integrity check passes. */
   onValid?: (token: HdpToken) => void
-  /** Called when an HDP token is present but invalid */
-  onInvalid?: (error: Error) => void
+  /** Called when token decoding or integrity verification finds an issue */
+  onInvalid?: (result: VerificationResult) => void
+  /** Called when the message has no HDP token. */
+  onMissing?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -114,17 +122,20 @@ export class HdpAgentWrapper {
   private readonly scope: HdpAgentOptions['scope']
   private readonly keyId: string
   private readonly expiresInMs: number
-  private readonly strict: boolean
+  private readonly onScopeViolation?: HdpAgentOptions['onScopeViolation']
   private hopCount = 0
 
   constructor(options: HdpAgentOptions) {
+    if (options.strict === true) {
+      throw new Error('HDP tokens are records and cannot gate tool calls')
+    }
     this.signingKey = options.signingKey
     this.sessionId = options.sessionId
     this.principal = options.principal
     this.scope = options.scope
     this.keyId = options.keyId ?? 'default'
     this.expiresInMs = options.expiresInMs ?? 24 * 60 * 60 * 1000
-    this.strict = options.strict ?? false
+    this.onScopeViolation = options.onScopeViolation
   }
 
   /**
@@ -183,16 +194,18 @@ export class HdpAgentWrapper {
   }
 
   /**
-   * Validate a tool call against authorized_tools.
-   * In strict mode, throws HdpScopeViolationError.
+   * Report whether a tool call is outside the recorded authorized_tools list.
+   * This finding does not gate the tool call.
    */
   onToolCall(tool: string): void {
     const authorized = this.scope.authorized_tools
     if (authorized === undefined) return
 
     if (!authorized.includes(tool)) {
-      if (this.strict) {
-        throw new HdpScopeViolationError(tool, authorized)
+      try {
+        this.onScopeViolation?.({ tool, authorizedTools: [...authorized] })
+      } catch (error) {
+        console.error('HDP scope violation callback failed:', error)
       }
     }
   }
@@ -214,29 +227,23 @@ export class HdpAgentWrapper {
 // ---------------------------------------------------------------------------
 
 /**
- * Wraps an AutoGen message handler with HDP token inspection.
- *
- * In observe mode (default, hdp_required: false):
- *   - If a valid token is present in message headers, onValid is called
- *   - If no token or invalid token, the handler is still called
- *
- * In required mode (hdp_required: true):
- *   - Missing or invalid token returns { error: 'HDP token required' }
- *   - Valid token calls onValid then passes through to handler
+ * Wraps an AutoGen message handler with record inspection. Token findings are
+ * reported to callbacks and never condition whether the handler runs.
  */
 export function hdpMiddleware(
   handler: AutoGenHandler,
   options: HdpMiddlewareOptions = {}
 ): AutoGenHandler {
-  const { verify, hdp_required = false, onValid, onInvalid } = options
+  const { verify, hdp_required, onValid, onInvalid, onMissing } = options
+  if (hdp_required === true) {
+    throw new Error('HDP tokens are records and cannot gate requests')
+  }
 
   return async (message: AutoGenMessage): Promise<AutoGenMessage> => {
     const tokenHeader = readTokenHeader(message.headers)
 
     if (!tokenHeader) {
-      if (hdp_required) {
-        return { error: 'HDP_REQUIRED: HDP-Token header is required' } as unknown as AutoGenMessage
-      }
+      notifyCallback(onMissing)
       return handler(message)
     }
 
@@ -244,33 +251,51 @@ export function hdpMiddleware(
     try {
       token = decodeHeader(tokenHeader)
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err))
-      onInvalid?.(error)
-      if (hdp_required) {
-        return { error: `HDP_INVALID: Failed to decode token: ${error.message}` } as unknown as AutoGenMessage
-      }
+      notifyCallbackResult(onInvalid, invalidInputResult(err))
       return handler(message)
     }
 
     if (verify) {
       const result = await verifyToken(token, verify)
       if (!result.valid) {
-        const error = result.error ?? new Error('Token verification failed')
-        onInvalid?.(error)
-        if (hdp_required) {
-          return { error: `HDP_INVALID: ${error.message}` } as unknown as AutoGenMessage
-        }
+        notifyCallbackResult(onInvalid, result)
         return handler(message)
       }
     }
 
-    onValid?.(token)
+    notifyCallbackResult(onValid, token)
     return handler(message)
   }
 }
 
+function notifyCallback(callback: (() => void) | undefined): void {
+  try {
+    callback?.()
+  } catch (error) {
+    console.error('HDP middleware callback failed:', error)
+  }
+}
+
+function notifyCallbackResult<T>(callback: ((value: T) => void) | undefined, value: T): void {
+  try {
+    callback?.(value)
+  } catch (error) {
+    console.error('HDP middleware callback failed:', error)
+  }
+}
+
+function invalidInputResult(error: unknown): VerificationResult {
+  return {
+    valid: false,
+    failedStep: 0,
+    error: error instanceof HdpError
+      ? error
+      : new HdpSchemaError(error instanceof Error ? error.message : String(error)),
+  }
+}
+
 /**
- * HTTP field names are case-insensitive. Prefer the draft -02 name and only
+ * HTTP field names are case-insensitive. Prefer the standard name and only
  * fall back to the deprecated X-prefixed alias for inbound compatibility.
  */
 function readTokenHeader(headers: Record<string, string> | undefined): string | undefined {
@@ -303,7 +328,7 @@ export const HDP_TOOLS = [
           scope: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Optional list of permitted action scopes',
+            description: 'Optional action scope labels recorded in the token',
           },
           expires_in: {
             type: 'integer',
@@ -329,7 +354,7 @@ export const HDP_TOOLS = [
           additional_scope: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Any extra permissions for this hop',
+            description: 'Optional scope labels to record with this hop',
           },
         },
         required: ['delegatee_id'],
@@ -341,8 +366,8 @@ export const HDP_TOOLS = [
     function: {
       name: 'hdp_verify_token',
       description:
-        'Verify an HDP token before performing sensitive actions. ' +
-        'Returns full provenance details.',
+        'Inspect an HDP token and return provenance details for audit. ' +
+        'The result must not gate an action.',
       parameters: {
         type: 'object',
         properties: {

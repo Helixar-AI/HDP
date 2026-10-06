@@ -22,13 +22,21 @@ describe('hdpMiddleware', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
-  it('blocks request in required mode when no token is present', async () => {
+  it('reports a missing token and still runs the handler', async () => {
     const handler = vi.fn().mockResolvedValue({ result: 'ok' })
-    const wrapped = hdpMiddleware(handler, { hdp_required: true })
+    const onMissing = vi.fn()
+    const wrapped = hdpMiddleware(handler, { onMissing })
     const response = await wrapped({ tool: 'my_tool', params: {} })
-    expect(response.error).toMatch('HDP_REQUIRED')
-    expect(response.error).toContain('HDP-Token')
-    expect(handler).not.toHaveBeenCalled()
+    expect(response).toEqual({ result: 'ok' })
+    expect(onMissing).toHaveBeenCalledOnce()
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('rejects the removed required option at construction', () => {
+    const handler = vi.fn().mockResolvedValue({ result: 'ok' })
+    expect(() => hdpMiddleware(handler, { hdp_required: true })).toThrow(
+      'HDP tokens are records and cannot gate requests',
+    )
   })
 
   it('calls onValid and passes through with a valid token', async () => {
@@ -38,8 +46,7 @@ describe('hdpMiddleware', () => {
     const handler = vi.fn().mockResolvedValue({ result: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-mcp-test' },
-      hdp_required: true,
+      verify: { publicKey },
       onValid,
     })
 
@@ -59,8 +66,7 @@ describe('hdpMiddleware', () => {
     const handler = vi.fn().mockResolvedValue({ result: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-mcp-test' },
-      hdp_required: true,
+      verify: { publicKey },
       onValid,
     })
 
@@ -70,21 +76,56 @@ describe('hdpMiddleware', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
-  it('blocks request with an expired token in required mode', async () => {
-    const { token, publicKey } = await makeToken(1)
+  it('reports an integrity failure and still runs the handler', async () => {
+    const { token, publicKey } = await makeToken()
+    token.principal.id = 'tampered'
     const encoded = encodeHeader(token)
     const onInvalid = vi.fn()
     const handler = vi.fn().mockResolvedValue({ result: 'ok' })
 
     const wrapped = hdpMiddleware(handler, {
-      verify: { publicKey, currentSessionId: 'sess-mcp-test', now: token.header.expires_at },
-      hdp_required: true,
+      verify: { publicKey },
       onInvalid,
     })
 
     const response = await wrapped({ headers: { 'x-hdp-token': encoded }, tool: 'my_tool' })
-    expect(response.error).toMatch('HDP_INVALID')
-    expect(onInvalid).toHaveBeenCalledOnce()
-    expect(handler).not.toHaveBeenCalled()
+    expect(response).toEqual({ result: 'ok' })
+    expect(onInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      failedStep: 2,
+      error: expect.any(Error),
+    }))
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('reports an undecodable token as an input finding and still runs the handler', async () => {
+    const onInvalid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ result: 'ok' })
+    const wrapped = hdpMiddleware(handler, { onInvalid })
+
+    const response = await wrapped({ headers: { 'HDP-Token': 'not-base64url' }, tool: 'my_tool' })
+
+    expect(response).toEqual({ result: 'ok' })
+    expect(onInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      failedStep: 0,
+      error: expect.any(Error),
+    }))
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('does not treat an expired record as an integrity failure', async () => {
+    const { token, publicKey } = await makeToken(1)
+    const onInvalid = vi.fn()
+    const onValid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ result: 'ok' })
+    const wrapped = hdpMiddleware(handler, { verify: { publicKey }, onInvalid, onValid })
+
+    const response = await wrapped({ headers: { 'HDP-Token': encodeHeader(token) }, tool: 'my_tool' })
+
+    expect(response).toEqual({ result: 'ok' })
+    expect(onValid).toHaveBeenCalledOnce()
+    expect(onInvalid).not.toHaveBeenCalled()
+    expect(handler).toHaveBeenCalledOnce()
   })
 })
