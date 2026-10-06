@@ -150,7 +150,7 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
             }
             candidate = {
                 **token,
-                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": "A" * 86}],
             }
             input_error = _validate_token_input(candidate)
             if input_error is not None:
@@ -203,7 +203,7 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
             }
             candidate = {
                 **token,
-                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": "A" * 86}],
             }
             input_error = _validate_token_input(candidate)
             if input_error is not None:

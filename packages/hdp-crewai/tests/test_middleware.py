@@ -259,7 +259,7 @@ class TestVerification:
         mw.before_kickoff()
         mw.on_task_end(FakeTaskOutput(agent="A", raw="r"))
         token = mw.export_token()
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub)
         assert not result.valid
 

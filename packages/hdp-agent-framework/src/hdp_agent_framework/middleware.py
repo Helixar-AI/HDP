@@ -235,7 +235,7 @@ class HdpMiddleware:
             "scope": self._scope.to_dict(),
             "chain": [],
         }
-        candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": self._key_id, "value": ""}}
+        candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": self._key_id, "value": "A" * 86}}
         input_error = _validate_token_input(candidate)
         if input_error is not None:
             raise ValueError(input_error)
@@ -285,7 +285,7 @@ class HdpMiddleware:
             current_chain: list = self._token.get("chain", [])
             candidate = {
                 **self._token,
-                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": "A" * 86}],
             }
             input_error = _validate_token_input(candidate)
             if input_error is not None:

@@ -16,7 +16,7 @@ const { privateKey } = await generateKeyPair();
 const wrapper = new HdpAgentWrapper({
   signingKey: privateKey,
   sessionId: "research-session-1",
-  principal: { id: "researcher", id_type: "handle" },
+  principal: { id: "researcher", id_type: "opaque" },
   scope: {
     intent: "Summarise recent papers",
     authorized_tools: ["web_search"],

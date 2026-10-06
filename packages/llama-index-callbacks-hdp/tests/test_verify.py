@@ -93,7 +93,7 @@ class TestVerifyChain:
         key, pub = _generate_key()
         token = _issue_token(key)
         token = _add_hop(token, key, "action")
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub.public_bytes_raw())
         assert not result.valid
 
@@ -117,7 +117,7 @@ class TestVerifyChain:
         key, pub = _generate_key()
         token = _issue_token(key)
         token["hdp"] = "0.2"
-        token["signature"]["value"] = "invalid"
+        token["signature"]["value"] = "A" * 86
 
         result = verify_chain(token, pub.public_bytes_raw())
 

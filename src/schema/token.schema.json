@@ -3,6 +3,7 @@
   "$id": "https://helixar.ai/labs/hdp/schema/0.1/token.json",
   "title": "HDP Token",
   "type": "object",
+  "additionalProperties": false,
   "required": ["hdp", "header", "principal", "scope", "chain", "signature"],
   "properties": {
     "hdp": { "type": "string" },

@@ -129,7 +129,7 @@ class TestTamperedRootSignature:
     def test_tampered_root_sig_mentions_root_in_violation(self):
         priv, pub = _generate_key()
         token = _build_root_token(priv)
-        token["signature"]["value"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        token["signature"]["value"] = "A" * 86
         result = verify_chain(token, pub)
         assert any("Root" in v for v in result.violations)
 
@@ -143,7 +143,7 @@ class TestTamperedHopSignature:
         priv, pub = _generate_key()
         token = _build_root_token(priv)
         token = _append_hop(token, priv, "agent-one")
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub)
         assert result.valid is False
 
@@ -152,7 +152,7 @@ class TestTamperedHopSignature:
         token = _build_root_token(priv)
         token = _append_hop(token, priv, "agent-one")
         token = _append_hop(token, priv, "agent-two")
-        token["chain"][1]["hop_signature"] = "AAAA"
+        token["chain"][1]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub)
         assert result.valid is False
 
@@ -221,7 +221,7 @@ class TestExpiredToken:
         priv, pub = _generate_key()
         token = _build_root_token(priv)
         token["hdp"] = "0.2"
-        token["signature"]["value"] = "invalid"
+        token["signature"]["value"] = "A" * 86
 
         result = verify_chain(token, pub)
         assert result.valid is False
@@ -246,7 +246,7 @@ class TestExpiredToken:
         token = _build_root_token(priv)
         token = _append_hop(token, priv, "agent-one")
         token["chain"][0]["seq"] = 2
-        token["chain"][0]["hop_signature"] = "invalid"
+        token["chain"][0]["hop_signature"] = "A" * 86
 
         result = verify_chain(token, pub)
 

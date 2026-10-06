@@ -270,7 +270,7 @@ class TestVerification:
         mw.before_kickoff()
         mw._extend_chain(agent_id="tool_a", action_summary="r", agent_type="tool-executor")
         token = mw.export_token()
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub)
         assert not result.valid
 

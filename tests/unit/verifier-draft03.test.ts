@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { extendChain } from '../../src/chain/extender.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
 import { signHop } from '../../src/crypto/sign.js'
@@ -7,6 +8,12 @@ import { issueSupersedingToken } from '../../src/token/reauth.js'
 import { auditToken, verifyToken } from '../../src/token/verifier.js'
 import type { HopRecord } from '../../src/types/chain.js'
 import type { HdpToken } from '../../src/types/token.js'
+
+const section3Vector = JSON.parse(
+  readFileSync(new URL('../vectors/section3-validation.json', import.meta.url), 'utf8'),
+) as { public_key_hex: string; token: Record<string, any> }
+const section3Token = section3Vector.token
+const section3PublicKey = Buffer.from(section3Vector.public_key_hex, 'hex')
 
 async function fixture(scope: HdpToken['scope'] = {
   intent: 'test', data_classification: 'public', network_egress: false, persistence: false,
@@ -58,6 +65,43 @@ afterEach(() => {
 })
 
 describe('draft -03 integrity verification', () => {
+  it('rejects a correctly signed token with an extra top-level member at step 0', async () => {
+    const tokenWithExtraMember = { ...section3Token, audit_note: 'unsigned' }
+
+    expect(await verifyToken(tokenWithExtraMember, { publicKey: section3PublicKey })).toMatchObject({
+      valid: false,
+      failedStep: 0,
+      error: { code: 'SCHEMA_INVALID' },
+    })
+  })
+
+  it('rejects an incomplete signature object at step 0', async () => {
+    const tokenWithIncompleteSignature = { ...section3Token, signature: {} }
+
+    expect(await verifyToken(tokenWithIncompleteSignature, { publicKey: section3PublicKey })).toMatchObject({
+      valid: false,
+      failedStep: 0,
+      error: { code: 'SCHEMA_INVALID' },
+    })
+  })
+
+  it('checks the signature algorithm value at step 2', async () => {
+    const tokenWithUnsupportedAlgorithm = {
+      ...section3Token,
+      signature: { ...section3Token.signature, alg: 'EdDSA' },
+    }
+
+    expect(await verifyToken(tokenWithUnsupportedAlgorithm, { publicKey: section3PublicKey })).toMatchObject({
+      valid: false,
+      failedStep: 2,
+      error: { code: 'SIGNATURE_INVALID' },
+    })
+  })
+
+  it('verifies the unmodified shared Section 3 input vector', async () => {
+    expect(await verifyToken(section3Token, { publicKey: section3PublicKey })).toEqual({ valid: true })
+  })
+
   it('reports input validation failures at step 0', async () => {
     const { publicKey } = await fixture()
     const result = await verifyToken(null, { publicKey })

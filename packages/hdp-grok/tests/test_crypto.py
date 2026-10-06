@@ -170,7 +170,7 @@ class TestCrypto:
         pub = _pub_bytes(key)
         token = issue_root_token(key, "k1", "sess-1", "user@x.com", [], expires_in=3600)
         token["hdp"] = "0.2"
-        token["signature"]["value"] = "invalid"
+        token["signature"]["value"] = "A" * 86
 
         result = verify_token_with_key(json.dumps(token), pub)
 

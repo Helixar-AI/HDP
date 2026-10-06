@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import math
+import re
 from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -97,8 +98,20 @@ def _validate_token_input(token: object) -> str | None:
     chain = token.get("chain")
     if not isinstance(header, dict):
         return "token.header must be a dictionary"
-    if not isinstance(token.get("signature"), dict):
+    signature = token.get("signature")
+    if not isinstance(signature, dict):
         return "token.signature must be a dictionary"
+    for field_name in ("alg", "kid", "value"):
+        if not isinstance(signature.get(field_name), str):
+            return f"signature.{field_name} must be a string"
+    if not signature["kid"]:
+        return "signature.kid must not be empty"
+    if re.fullmatch(r"[A-Za-z0-9_-]{86}", signature["value"]) is None:
+        return "signature.value must be an 86-character base64url string"
+    if "signed_fields" in signature and (
+        signature["signed_fields"] != ["header", "principal", "scope"]
+    ):
+        return "signature.signed_fields must be [header, principal, scope]"
     if not isinstance(principal, dict):
         return "token.principal must be a dictionary"
     if not isinstance(scope, dict):
@@ -127,20 +140,31 @@ def _validate_token_input(token: object) -> str | None:
             return f"header.{field_name} must be an integer from 0 to {_MAX_SAFE_INTEGER}"
     if header["expires_at"] <= header["issued_at"]:
         return "header.expires_at must be greater than header.issued_at"
-    if not isinstance(header.get("session_id"), str):
-        return "header.session_id must be a string"
+    if not isinstance(header.get("session_id"), str) or not header["session_id"]:
+        return "header.session_id must be a non-empty string"
     if not isinstance(header.get("version"), str):
         return "header.version must be a string"
-    if "parent_token_id" in header and not isinstance(header["parent_token_id"], str):
-        return "header.parent_token_id must be a string"
+    if "parent_token_id" in header:
+        parent_token_id = header["parent_token_id"]
+        if not isinstance(parent_token_id, str):
+            return "header.parent_token_id must be a UUID string"
+        try:
+            parsed_parent_token_id = UUID(parent_token_id)
+        except ValueError:
+            return "header.parent_token_id must be a UUID string"
+        if str(parsed_parent_token_id) != parent_token_id.lower():
+            return "header.parent_token_id must be a UUID string"
 
     if not isinstance(principal.get("id"), str):
         return "principal.id must be a string"
     id_type = principal.get("id_type")
     if not isinstance(id_type, str) or (
-        id_type not in _PRINCIPAL_ID_TYPES and not id_type.startswith("x-")
+        id_type not in _PRINCIPAL_ID_TYPES and re.fullmatch(r"x-.+", id_type) is None
     ):
-        return "principal.id_type must be a defined value or start with 'x-'"
+        return "principal.id_type must be a defined value or match 'x-...'"
+    for field_name in ("poh_credential", "display_name"):
+        if field_name in principal and not isinstance(principal[field_name], str):
+            return f"principal.{field_name} must be a string"
     if "metadata" in principal and not isinstance(principal["metadata"], dict):
         return "principal.metadata must be an object"
 
@@ -168,6 +192,11 @@ def _validate_token_input(token: object) -> str | None:
         ):
             return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
 
+    if "constraints" in scope and not isinstance(scope["constraints"], list):
+        return "scope.constraints must be an array"
+    if "extensions" in scope and not isinstance(scope["extensions"], dict):
+        return "scope.extensions must be an object"
+
     for index, hop in enumerate(chain):
         seq = hop.get("seq")
         if (
@@ -182,6 +211,11 @@ def _validate_token_input(token: object) -> str | None:
                 return f"chain[{index}].{field_name} must be a string"
         if "agent_fingerprint" in hop and not isinstance(hop["agent_fingerprint"], str):
             return f"chain[{index}].agent_fingerprint must be a string"
+        hop_signature = hop.get("hop_signature")
+        if not isinstance(hop_signature, str) or re.fullmatch(
+            r"[A-Za-z0-9_-]{86}", hop_signature
+        ) is None:
+            return f"chain[{index}].hop_signature must be an 86-character base64url string"
         for field_name in ("timestamp", "parent_hop"):
             value = hop.get(field_name)
             if (
