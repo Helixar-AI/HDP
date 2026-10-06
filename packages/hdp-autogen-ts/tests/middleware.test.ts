@@ -194,6 +194,29 @@ describe('HdpAgentWrapper', () => {
     }
   })
 
+  it('continues the tool call after a synchronously throwing onScopeViolation callback', () => {
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = new HdpAgentWrapper({
+      signingKey: new Uint8Array(32),
+      sessionId: 's',
+      principal: { id: 'u', id_type: 'opaque' },
+      scope: { intent: 'x', authorized_tools: ['web_search'] },
+      onScopeViolation: () => { throw new Error('sensitive callback detail') },
+    })
+    const tool = vi.fn().mockReturnValue('tool result')
+
+    try {
+      expect(() => wrapper.onToolCall('browser_tool')).not.toThrow()
+      const result = tool()
+
+      expect(result).toBe('tool result')
+      expect(tool).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onScopeViolation']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
   it('allows all tools when authorized_tools is undefined', () => {
     const wrapper = new HdpAgentWrapper({
       signingKey: new Uint8Array(32),
@@ -335,6 +358,68 @@ describe('hdpMiddleware', () => {
     }))
     expect(onMissing).not.toHaveBeenCalled()
     expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it('continues the handler after a synchronously throwing onMissing callback', async () => {
+    const handler = vi.fn().mockResolvedValue({ content: 'missing' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      onMissing: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({ name: 'missing' })
+
+      expect(response).toEqual({ content: 'missing' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onMissing']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
+  it('continues the handler after a synchronously throwing onInvalid callback', async () => {
+    const handler = vi.fn().mockResolvedValue({ content: 'invalid' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      onInvalid: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({
+        headers: { 'HDP-Token': 'not-base64url' },
+        name: 'invalid',
+      })
+
+      expect(response).toEqual({ content: 'invalid' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onInvalid']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
+  it('continues the handler after a synchronously throwing onValid callback', async () => {
+    const { token, publicKey } = await makeToken()
+    const handler = vi.fn().mockResolvedValue({ content: 'valid' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      verify: { publicKey },
+      onValid: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({
+        headers: { 'HDP-Token': encodeHeader(token) },
+        name: 'valid',
+      })
+
+      expect(response).toEqual({ content: 'valid' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onValid']])
+    } finally {
+      logError.mockRestore()
+    }
   })
 
   it('does not treat an expired record as an integrity failure', async () => {

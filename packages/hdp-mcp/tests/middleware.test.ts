@@ -187,6 +187,68 @@ describe('hdpMiddleware', () => {
     }
   })
 
+  it('continues the handler after a synchronously throwing onMissing callback', async () => {
+    const handler = vi.fn().mockResolvedValue({ result: 'missing' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      onMissing: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({ tool: 'missing' })
+
+      expect(response).toEqual({ result: 'missing' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onMissing']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
+  it('continues the handler after a synchronously throwing onInvalid callback', async () => {
+    const handler = vi.fn().mockResolvedValue({ result: 'invalid' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      onInvalid: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({
+        headers: { 'HDP-Token': 'not-base64url' },
+        tool: 'invalid',
+      })
+
+      expect(response).toEqual({ result: 'invalid' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onInvalid']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
+  it('continues the handler after a synchronously throwing onValid callback', async () => {
+    const { token, publicKey } = await makeToken()
+    const handler = vi.fn().mockResolvedValue({ result: 'valid' })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = hdpMiddleware(handler, {
+      verify: { publicKey },
+      onValid: () => { throw new Error('sensitive callback detail') },
+    })
+
+    try {
+      const response = await wrapped({
+        headers: { 'HDP-Token': encodeHeader(token) },
+        tool: 'valid',
+      })
+
+      expect(response).toEqual({ result: 'valid' })
+      expect(handler).toHaveBeenCalledOnce()
+      expect(logError.mock.calls).toEqual([['HDP callback failed: onValid']])
+    } finally {
+      logError.mockRestore()
+    }
+  })
+
   it('does not treat an expired record as an integrity failure', async () => {
     const { token, publicKey } = await makeToken(1)
     const onInvalid = vi.fn()
