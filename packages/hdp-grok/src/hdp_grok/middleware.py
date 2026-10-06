@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import json
 import os
 import re
@@ -196,8 +197,8 @@ class HdpMiddleware:
     # ── Inspection ───────────────────────────────────────────────────────────
 
     def export_current_token(self) -> dict | None:
-        """Return the live in-memory token dict, or None before issue_token."""
-        return self._current_token
+        """Return a defensive copy of the current token, if one was issued."""
+        return deepcopy(self._current_token)
 
     def __repr__(self) -> str:
         valid = self._current_token is not None

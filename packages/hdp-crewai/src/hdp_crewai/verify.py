@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import math
 from uuid import UUID
 
@@ -16,8 +17,15 @@ _DATA_CLASSIFICATIONS = {"public", "internal", "confidential", "restricted"}
 
 
 def _validate_json_value(value: object, path: str = "token") -> str | None:
-    if value is None or isinstance(value, (bool, int)):
+    if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        try:
+            if math.isfinite(float(value)) and int(float(value)) == value:
+                return None
+        except (OverflowError, ValueError):
+            pass
+        return f"{path} integer must be exactly representable as an IEEE 754 number"
     if isinstance(value, float):
         return None if math.isfinite(value) else f"{path} must not contain non-finite numbers"
     if isinstance(value, str):
@@ -44,6 +52,32 @@ def _validate_json_value(value: object, path: str = "token") -> str | None:
                 return error
         return None
     return f"{path} contains a value that is not JSON"
+
+
+def _object_from_pairs(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object member {key!r}")
+        result[key] = value
+    return result
+
+
+def _reject_non_finite_number(value: str) -> None:
+    raise ValueError(f"non-finite JSON number {value}")
+
+
+def _parse_token_input(token: object) -> tuple[object, str | None]:
+    if not isinstance(token, str):
+        return token, None
+    try:
+        return json.loads(
+            token,
+            object_pairs_hook=_object_from_pairs,
+            parse_constant=_reject_non_finite_number,
+        ), None
+    except ValueError as exc:
+        return None, str(exc)
 
 
 def _validate_token_input(token: object) -> str | None:
@@ -124,14 +158,15 @@ def _validate_token_input(token: object) -> str | None:
     for field_name in ("network_egress", "persistence"):
         if not isinstance(scope.get(field_name), bool):
             return f"scope.{field_name} must be a boolean"
-    max_hops = scope.get("max_hops")
-    if max_hops is not None and (
-        not isinstance(max_hops, int)
-        or isinstance(max_hops, bool)
-        or max_hops < 1
-        or max_hops > _MAX_SAFE_INTEGER
-    ):
-        return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
+    if "max_hops" in scope:
+        max_hops = scope["max_hops"]
+        if (
+            not isinstance(max_hops, int)
+            or isinstance(max_hops, bool)
+            or max_hops < 1
+            or max_hops > _MAX_SAFE_INTEGER
+        ):
+            return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
 
     for index, hop in enumerate(chain):
         seq = hop.get("seq")
@@ -187,11 +222,28 @@ class VerificationResult:
         return self.hop_count
 
 
-def verify_chain(token: dict, public_key: Ed25519PublicKey | bytes) -> VerificationResult:
-    """Verify the five integrity steps without using current time or session state."""
-    input_error = _validate_token_input(token)
+def verify_chain(token: dict | str, public_key: Ed25519PublicKey | bytes) -> VerificationResult:
+    """Verify a record without time or session state.
+
+    String input is parsed with duplicate-member detection. For dictionary input,
+    duplicate detection remains the responsibility of the caller's parser.
+    """
+    token, parse_error = _parse_token_input(token)
+    input_error = parse_error or _validate_token_input(token)
     if input_error is not None:
-        raise ValueError(input_error)
+        input_header = token.get("header") if isinstance(token, dict) else None
+        input_chain = token.get("chain") if isinstance(token, dict) else None
+        input_token_id = input_header.get("token_id") if isinstance(input_header, dict) else None
+        input_session_id = input_header.get("session_id") if isinstance(input_header, dict) else None
+        return VerificationResult(
+            valid=False,
+            token_id=input_token_id if isinstance(input_token_id, str) else "unknown",
+            session_id=input_session_id if isinstance(input_session_id, str) else "unknown",
+            hop_count=len(input_chain) if isinstance(input_chain, list) else 0,
+            hop_results=[],
+            violations=[f"Step 0: Input validation failed: {input_error}"],
+            recorded_after_period=[],
+        )
     header = token["header"]
     chain = token["chain"]
     scope = token["scope"]

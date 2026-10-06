@@ -32,6 +32,7 @@ from llama_index.core.schema import NodeWithScore, QueryBundle
 from ._crypto import sign_hop
 from .callbacks import HDPScopeViolationError
 from .session import get_token, set_token
+from .verify import _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -123,28 +124,38 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
         return nodes
 
     def _extend_chain(self, token: dict, nodes: List[NodeWithScore], query_str: str) -> None:
-        current_chain: list = token.get("chain", [])
-        max_hops = token.get("scope", {}).get("max_hops")
-        if max_hops is not None and len(current_chain) >= max_hops:
-            logger.warning("HDP max_hops (%d) reached; retrieval hop was not recorded", max_hops)
-            return
-        next_seq = len(current_chain) + 1
-
-        summary_parts = [f"retrieval: {len(nodes)} nodes"]
-        if query_str:
-            summary_parts.append(f"query: {query_str[:80]}")
-        action_summary = ", ".join(summary_parts)
-
-        unsigned_hop: dict = {
-            "seq": next_seq,
-            "agent_id": "llama-index-retriever",
-            "agent_type": "tool-executor",
-            "timestamp": int(time.time() * 1000),
-            "action_summary": action_summary,
-            "parent_hop": next_seq - 1,
-        }
-
         try:
+            current_chain: list = token.get("chain", [])
+            max_hops = token.get("scope", {}).get("max_hops")
+            if max_hops is not None and len(current_chain) >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; retrieval hop was not recorded", max_hops)
+                return
+            input_error = _validate_token_input(token)
+            if input_error is not None:
+                raise ValueError(input_error)
+            next_seq = len(current_chain) + 1
+
+            summary_parts = [f"retrieval: {len(nodes)} nodes"]
+            if query_str:
+                summary_parts.append(f"query: {query_str[:80]}")
+            action_summary = ", ".join(summary_parts)
+
+            unsigned_hop: dict = {
+                "seq": next_seq,
+                "agent_id": "llama-index-retriever",
+                "agent_type": "tool-executor",
+                "timestamp": int(time.time() * 1000),
+                "action_summary": action_summary,
+                "parent_hop": next_seq - 1,
+            }
+            candidate = {
+                **token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+
             if self._signing_key is None:
                 logger.warning(
                     "HDP postprocessor: no signing key configured; retrieval hop was not recorded"
@@ -157,8 +168,8 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
             token = {**token, "chain": [*current_chain, signed_hop]}
             set_token(token)
             logger.debug("HDP retrieval hop %d recorded", next_seq)
-        except Exception as exc:
-            logger.warning("HDP postprocessor chain extension failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP audit record append failed; retrieval continues")
 
     def _record_classification_violation(
         self,
@@ -166,25 +177,38 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
         violated_classes: list,
         allowed: str,
     ) -> None:
-        if self._signing_key is None:
-            logger.warning("HDP postprocessor: no signing key configured; classification violation was not recorded")
-            return
-        current_chain = token.get("chain", [])
-        max_hops = token.get("scope", {}).get("max_hops")
-        if max_hops is not None and len(current_chain) >= max_hops:
-            logger.warning("HDP max_hops (%d) reached; classification violation was not recorded", max_hops)
-            return
-        next_seq = len(current_chain) + 1
-        unsigned_hop = {
-            "seq": next_seq,
-            "agent_id": "llama-index-retriever",
-            "agent_type": "tool-executor",
-            "timestamp": int(time.time() * 1000),
-            "action_summary": (
-                "observed data-classification violation: "
-                f"{','.join(map(str, violated_classes))} exceeds {allowed}"
-            ),
-            "parent_hop": next_seq - 1,
-        }
-        hop_sig = sign_hop([*current_chain, unsigned_hop], token["signature"]["value"], self._signing_key)
-        set_token({**token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]})
+        try:
+            if self._signing_key is None:
+                logger.warning("HDP postprocessor: no signing key configured; classification finding was not recorded")
+                return
+            current_chain = token.get("chain", [])
+            max_hops = token.get("scope", {}).get("max_hops")
+            if max_hops is not None and len(current_chain) >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; classification finding was not recorded", max_hops)
+                return
+            input_error = _validate_token_input(token)
+            if input_error is not None:
+                raise ValueError(input_error)
+            next_seq = len(current_chain) + 1
+            unsigned_hop = {
+                "seq": next_seq,
+                "agent_id": "llama-index-retriever",
+                "agent_type": "tool-executor",
+                "timestamp": int(time.time() * 1000),
+                "action_summary": (
+                    "observed data-classification violation: "
+                    f"{','.join(map(str, violated_classes))} exceeds {allowed}"
+                ),
+                "parent_hop": next_seq - 1,
+            }
+            candidate = {
+                **token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+            hop_sig = sign_hop([*current_chain, unsigned_hop], token["signature"]["value"], self._signing_key)
+            set_token({**token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]})
+        except Exception:
+            logger.warning("HDP audit record append failed; retrieval continues")

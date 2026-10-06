@@ -30,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import time
@@ -39,6 +40,7 @@ from typing import Any, Optional
 
 from ._crypto import sign_hop, sign_root
 from ._types import HdpPrincipal, DataClassification
+from .verify import _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -130,26 +132,30 @@ class HdpMiddleware:
 
     def before_kickoff(self, inputs: Optional[dict] = None) -> None:
         """Issues the HDP root token. Wired to before_kickoff_callbacks."""
+        now = int(time.time() * 1000)
+        unsigned: dict = {
+            "hdp": "0.1",
+            "header": {
+                "token_id": str(uuid.uuid4()),
+                "issued_at": now,
+                "expires_at": now + self._expires_in_ms,
+                "session_id": self._session_id,
+                "version": "0.1",
+            },
+            "principal": self._build_principal_dict(),
+            "scope": self._scope.to_dict(),
+            "chain": [],
+        }
+        candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": self._key_id, "value": ""}}
+        input_error = _validate_token_input(candidate)
+        if input_error is not None:
+            raise ValueError(input_error)
         try:
-            now = int(time.time() * 1000)
-            unsigned: dict = {
-                "hdp": "0.1",
-                "header": {
-                    "token_id": str(uuid.uuid4()),
-                    "issued_at": now,
-                    "expires_at": now + self._expires_in_ms,
-                    "session_id": self._session_id,
-                    "version": "0.1",
-                },
-                "principal": self._build_principal_dict(),
-                "scope": self._scope.to_dict(),
-                "chain": [],
-            }
             signature = sign_root(unsigned, self._signing_key, self._key_id)
             self._token = {**unsigned, "signature": signature}
             logger.debug("HDP root token issued: %s", self._token["header"]["token_id"])
-        except Exception as exc:
-            logger.warning("HDP before_kickoff failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP root record signing failed; action continues")
 
     def on_step(self, step_output: Any) -> None:
         """Record an out-of-scope tool attempt after the agent step.
@@ -171,7 +177,10 @@ class HdpMiddleware:
                 tool,
                 authorized,
             )
-            self._record_scope_violation(tool)
+            try:
+                self._record_scope_violation(tool)
+            except Exception:
+                logger.warning("HDP audit record append failed; action continues")
 
     def on_task_end(self, task_output: Any) -> None:
         """Record a task-end hop when the chain has remaining capacity.
@@ -182,38 +191,11 @@ class HdpMiddleware:
         if self._token is None:
             return
         try:
-            max_hops = self._scope.max_hops
-            if max_hops is not None and self._hop_seq >= max_hops:
-                logger.warning(
-                    "HDP max_hops (%d) reached — skipping hop for agent '%s'",
-                    max_hops,
-                    getattr(task_output, "agent", "unknown"),
-                )
-                return
-
-            self._hop_seq += 1
             agent_id: str = getattr(task_output, "agent", "unknown-agent")
             raw_output: str = str(getattr(task_output, "raw", task_output))
-            action_summary = raw_output[:200]
-
-            unsigned_hop: dict = {
-                "seq": self._hop_seq,
-                "agent_id": agent_id,
-                "agent_type": "sub-agent",
-                "timestamp": int(time.time() * 1000),
-                "action_summary": action_summary,
-                "parent_hop": self._hop_seq - 1,
-            }
-
-            current_chain: list = self._token.get("chain", [])
-            cumulative = [*current_chain, unsigned_hop]
-            hop_sig = sign_hop(cumulative, self._token["signature"]["value"], self._signing_key)
-
-            signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
-            self._token = {**self._token, "chain": [*current_chain, signed_hop]}
-            logger.debug("HDP hop %d recorded for agent '%s'", self._hop_seq, agent_id)
-        except Exception as exc:
-            logger.warning("HDP on_task_end failed (non-blocking): %s", exc)
+            self._append_hop(agent_id, raw_output[:200], "sub-agent")
+        except Exception:
+            logger.warning("HDP audit record append failed; action continues")
 
     def after_kickoff(self, output: Any = None) -> Any:
         """Design considerations #3 + #5 — Performance + Memory integration.
@@ -232,8 +214,8 @@ class HdpMiddleware:
                 )
                 if self._persist_token:
                     self._save_token_to_storage()
-        except Exception as exc:
-            logger.warning("HDP after_kickoff failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP token persistence failed; action continues")
         # after_kickoff_callbacks must return the output unchanged
         return output
 
@@ -284,8 +266,8 @@ class HdpMiddleware:
     # ------------------------------------------------------------------
 
     def export_token(self) -> Optional[dict]:
-        """Return the current token dict, or None if kickoff hasn't run."""
-        return self._token
+        """Return a defensive copy of the current token, if kickoff has run."""
+        return deepcopy(self._token)
 
     def export_token_json(self, indent: int = 2) -> Optional[str]:
         """Return the token as a JSON string, or None if kickoff hasn't run."""
@@ -307,24 +289,50 @@ class HdpMiddleware:
 
     def _record_scope_violation(self, tool: str) -> None:
         """Append a signed hop describing an out-of-scope attempt."""
-        if self._token is None:
-            return
-        max_hops = self._scope.max_hops
-        if max_hops is not None and self._hop_seq >= max_hops:
-            logger.warning("HDP max_hops (%d) reached; violation hop could not be appended", max_hops)
-            return
-        self._hop_seq += 1
-        unsigned_hop = {
-            "seq": self._hop_seq,
-            "agent_id": tool,
-            "agent_type": "tool-executor",
-            "timestamp": int(time.time() * 1000),
-            "action_summary": f"attempted out-of-scope tool call: {tool}",
-            "parent_hop": self._hop_seq - 1,
-        }
-        current_chain = self._token.get("chain", [])
-        hop_sig = sign_hop([*current_chain, unsigned_hop], self._token["signature"]["value"], self._signing_key)
-        self._token = {**self._token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]}
+        self._append_hop(tool, f"attempted out-of-scope tool call: {tool}", "tool-executor")
+
+    def _append_hop(self, agent_id: str, action_summary: str, agent_type: str) -> None:
+        """Append one validated audit hop without affecting the action."""
+        try:
+            if self._token is None:
+                return
+            max_hops = self._scope.max_hops
+            if max_hops is not None and self._hop_seq >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; hop was not recorded", max_hops)
+                return
+            input_error = _validate_token_input(self._token)
+            if input_error is not None:
+                raise ValueError(input_error)
+            next_seq = self._hop_seq + 1
+            unsigned_hop = {
+                "seq": next_seq,
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "timestamp": int(time.time() * 1000),
+                "action_summary": action_summary,
+                "parent_hop": next_seq - 1,
+            }
+            current_chain = self._token.get("chain", [])
+            candidate = {
+                **self._token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+            hop_sig = sign_hop(
+                [*current_chain, unsigned_hop],
+                self._token["signature"]["value"],
+                self._signing_key,
+            )
+            self._token = {
+                **self._token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}],
+            }
+            self._hop_seq = next_seq
+            logger.debug("HDP hop %d recorded", next_seq)
+        except Exception:
+            logger.warning("HDP audit record append failed; action continues")
 
     def _save_token_to_storage(self) -> None:
         """Design consideration #5 — persist token to crewAI's storage directory.
@@ -345,5 +353,5 @@ class HdpMiddleware:
             output_path = storage_dir / f"hdp_token_{token_id}.json"
             output_path.write_text(json.dumps(self._token, indent=2))
             logger.debug("HDP token persisted to %s", output_path)
-        except Exception as exc:
-            logger.warning("HDP token persistence failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP token persistence failed; action continues")

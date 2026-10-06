@@ -108,8 +108,15 @@ def _reject_non_finite_number(value: str) -> None:
 
 
 def _validate_json_value(value: object, path: str = "token") -> str | None:
-    if value is None or isinstance(value, (bool, int)):
+    if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        try:
+            if math.isfinite(float(value)) and int(float(value)) == value:
+                return None
+        except (OverflowError, ValueError):
+            pass
+        return f"{path} integer must be exactly representable as an IEEE 754 number"
     if isinstance(value, float):
         return None if math.isfinite(value) else f"{path} must not contain non-finite numbers"
     if isinstance(value, str):
@@ -142,7 +149,7 @@ def _invalid_json_result(message: str) -> dict:
     return {"valid": False, "hop_count": 0, "principal_id": None,
             "session_id": None, "expires_at": 0, "expired": False,
             "recorded_after_period": [],
-            "integrity_violations": [f"Input validation failed: {message}"],
+            "integrity_violations": [f"Step 0: Input validation failed: {message}"],
             "violations": ["invalid JSON"], "chain": []}
 
 
@@ -224,14 +231,15 @@ def _validate_token_input(token: object) -> str | None:
     for field_name in ("network_egress", "persistence"):
         if not isinstance(scope.get(field_name), bool):
             return f"scope.{field_name} must be a boolean"
-    max_hops = scope.get("max_hops")
-    if max_hops is not None and (
-        not isinstance(max_hops, int)
-        or isinstance(max_hops, bool)
-        or max_hops < 1
-        or max_hops > _MAX_SAFE_INTEGER
-    ):
-        return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
+    if "max_hops" in scope:
+        max_hops = scope["max_hops"]
+        if (
+            not isinstance(max_hops, int)
+            or isinstance(max_hops, bool)
+            or max_hops < 1
+            or max_hops > _MAX_SAFE_INTEGER
+        ):
+            return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
 
     for index, hop in enumerate(chain):
         seq = hop.get("seq")
@@ -266,9 +274,21 @@ def issue_root_token(
     principal_id: str,
     scope: list[str],
     expires_in: int,
+    max_hops: int | None = None,
 ) -> dict:
     """Build and sign a root HDP token dict."""
+    if isinstance(expires_in, bool) or not isinstance(expires_in, int) or expires_in <= 0:
+        raise ValueError("expires_in must be a positive integer")
     now = int(time.time() * 1000)
+    scope_record: dict = {
+        "intent": principal_id,
+        "data_classification": "internal",
+        "network_egress": True,
+        "persistence": False,
+        "authorized_tools": scope,
+    }
+    if max_hops is not None:
+        scope_record["max_hops"] = max_hops
     unsigned: dict = {
         "hdp": "0.1",
         "header": {
@@ -282,15 +302,13 @@ def issue_root_token(
             "id": principal_id,
             "id_type": "opaque",
         },
-        "scope": {
-            "intent": principal_id,
-            "data_classification": "internal",
-            "network_egress": True,
-            "persistence": False,
-            "authorized_tools": scope,
-        },
+        "scope": scope_record,
         "chain": [],
     }
+    candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": key_id, "value": ""}}
+    input_error = _validate_token_input(candidate)
+    if input_error is not None:
+        raise ValueError(input_error)
     signature = _sign_root(unsigned, signing_key, key_id)
     return {**unsigned, "signature": signature}
 
@@ -303,20 +321,33 @@ def extend_token_chain(
     additional_scope: list[str],
 ) -> dict:
     """Append a signed hop to parent_token and return the updated dict."""
+    input_error = _validate_token_input(parent_token)
+    if input_error is not None:
+        raise ValueError(input_error)
     current_chain: list = parent_token.get("chain", [])
     max_hops = parent_token.get("scope", {}).get("max_hops")
     if max_hops is not None and len(current_chain) >= max_hops:
         return parent_token
 
     hop_seq = len(current_chain) + 1
+    timestamp = int(time.time() * 1000)
+    if current_chain:
+        timestamp = max(timestamp, current_chain[-1]["timestamp"])
     unsigned_hop: dict = {
         "seq": hop_seq,
         "agent_id": delegatee_id,
         "agent_type": "sub-agent",
-        "timestamp": int(time.time() * 1000),
+        "timestamp": timestamp,
         "action_summary": "",
         "parent_hop": hop_seq - 1,
     }
+    candidate = {
+        **parent_token,
+        "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+    }
+    input_error = _validate_token_input(candidate)
+    if input_error is not None:
+        raise ValueError(input_error)
     cumulative = [*current_chain, unsigned_hop]
     hop_sig = _sign_hop(cumulative, parent_token["signature"]["value"], signing_key)
     signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
@@ -324,7 +355,7 @@ def extend_token_chain(
 
 
 def verify_token_with_key(token_str: str, public_key_bytes: bytes) -> dict:
-    """Verify a JSON token string against a 32-byte Ed25519 public key."""
+    """Verify serialized token input with duplicate-member detection."""
     try:
         token = json.loads(
             token_str,
@@ -340,7 +371,7 @@ def verify_token_with_key(token_str: str, public_key_bytes: bytes) -> dict:
         return {"valid": False, "hop_count": 0, "principal_id": None,
                 "session_id": None, "expires_at": 0, "expired": False,
                 "recorded_after_period": [],
-                "integrity_violations": ["Input validation failed: token must be an object"],
+                "integrity_violations": ["Step 0: Input validation failed: token must be an object"],
                 "violations": [], "chain": []}
 
     input_error = _validate_token_input(token)
@@ -353,7 +384,7 @@ def verify_token_with_key(token_str: str, public_key_bytes: bytes) -> dict:
                 "session_id": header.get("session_id") if isinstance(header, dict) else None,
                 "expires_at": header.get("expires_at", 0) if isinstance(header, dict) else 0,
                 "expired": False, "recorded_after_period": [],
-                "integrity_violations": [f"Input validation failed: {input_error}"],
+                "integrity_violations": [f"Step 0: Input validation failed: {input_error}"],
                 "violations": [], "chain": chain if isinstance(chain, list) else []}
 
     header = token["header"]

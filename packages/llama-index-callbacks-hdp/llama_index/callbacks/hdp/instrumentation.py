@@ -21,6 +21,7 @@ Usage:
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 import time
 import uuid
@@ -48,6 +49,7 @@ from ._crypto import sign_hop, sign_root
 from ._types import DataClassification, HdpPrincipal
 from .callbacks import HDPScopeViolationError, ScopePolicy
 from .session import get_token, set_token
+from .verify import _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +149,8 @@ class HdpEventHandler(BaseEventHandler):
                 self._on_llm_end(event)
             elif isinstance(event, QueryEndEvent):
                 self._on_query_end(event)
-        except Exception as exc:
-            logger.warning("HDP event handler failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP event recording failed; action continues")
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -170,11 +172,18 @@ class HdpEventHandler(BaseEventHandler):
             "scope": self._scope.to_dict(),
             "chain": [],
         }
-        signature = sign_root(unsigned, self._signing_key, self._key_id)
-        token = {**unsigned, "signature": signature}
-        set_token(token)
-        self._hop_seq = 0
-        logger.debug("HDP root token issued: %s", token["header"]["token_id"])
+        candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": self._key_id, "value": ""}}
+        input_error = _validate_token_input(candidate)
+        if input_error is not None:
+            raise ValueError(input_error)
+        try:
+            signature = sign_root(unsigned, self._signing_key, self._key_id)
+            token = {**unsigned, "signature": signature}
+            set_token(token)
+            self._hop_seq = 0
+            logger.debug("HDP root token issued: %s", token["header"]["token_id"])
+        except Exception:
+            logger.warning("HDP root record signing failed; action continues")
 
     def _on_tool_call(self, event: AgentToolCallEvent) -> None:
         tool_name: str = ""
@@ -214,40 +223,54 @@ class HdpEventHandler(BaseEventHandler):
         if token is not None and self._on_token_ready is not None:
             try:
                 self._on_token_ready(token)
-            except Exception as exc:
-                logger.warning("HDP on_token_ready callback failed: %s", exc)
+            except Exception:
+                logger.warning("HDP token-ready callback failed")
 
     # ------------------------------------------------------------------
     # Helpers (shared with HdpCallbackHandler logic)
     # ------------------------------------------------------------------
 
     def _extend_chain(self, action_summary: str) -> None:
-        token = get_token()
-        if token is None:
-            return
+        try:
+            token = get_token()
+            if token is None:
+                return
 
-        max_hops = self._scope.max_hops
-        if max_hops is not None and self._hop_seq >= max_hops:
-            logger.warning("HDP max_hops (%d) reached — skipping hop", max_hops)
-            return
+            max_hops = self._scope.max_hops
+            if max_hops is not None and self._hop_seq >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; hop was not recorded", max_hops)
+                return
+            input_error = _validate_token_input(token)
+            if input_error is not None:
+                raise ValueError(input_error)
 
-        self._hop_seq += 1
-        unsigned_hop: dict = {
-            "seq": self._hop_seq,
-            "agent_id": "llama-index-agent",
-            "agent_type": "tool-executor",
-            "timestamp": int(time.time() * 1000),
-            "action_summary": action_summary,
-            "parent_hop": self._hop_seq - 1,
-        }
+            next_seq = self._hop_seq + 1
+            unsigned_hop: dict = {
+                "seq": next_seq,
+                "agent_id": "llama-index-agent",
+                "agent_type": "tool-executor",
+                "timestamp": int(time.time() * 1000),
+                "action_summary": action_summary,
+                "parent_hop": next_seq - 1,
+            }
 
-        current_chain: list = token.get("chain", [])
-        cumulative = [*current_chain, unsigned_hop]
-        hop_sig = sign_hop(cumulative, token["signature"]["value"], self._signing_key)
-        signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
-        token = {**token, "chain": [*current_chain, signed_hop]}
-        set_token(token)
-        logger.debug("HDP hop %d recorded: %s", self._hop_seq, action_summary)
+            current_chain: list = token.get("chain", [])
+            candidate = {
+                **token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": ""}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+
+            cumulative = [*current_chain, unsigned_hop]
+            hop_sig = sign_hop(cumulative, token["signature"]["value"], self._signing_key)
+            signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
+            set_token({**token, "chain": [*current_chain, signed_hop]})
+            self._hop_seq = next_seq
+            logger.debug("HDP hop %d recorded", next_seq)
+        except Exception:
+            logger.warning("HDP audit record append failed; action continues")
 
     def _record_scope_violation(self, tool: str) -> None:
         self._extend_chain(action_summary=f"attempted out-of-scope tool call: {tool}")
@@ -297,6 +320,30 @@ class HdpInstrumentationHandler:
         if on_violation == "raise":
             raise ValueError("HDP tokens are records and cannot gate actions")
 
+        now = int(time.time() * 1000)
+        candidate = {
+            "hdp": "0.1",
+            "header": {
+                "token_id": str(uuid.uuid4()),
+                "issued_at": now,
+                "expires_at": now + expires_in_ms,
+                "session_id": "validation-session",
+                "version": "0.1",
+            },
+            "principal": {
+                "id": principal.id,
+                "id_type": principal.id_type,
+                **({"display_name": principal.display_name} if principal.display_name is not None else {}),
+                **({"metadata": principal.metadata} if principal.metadata is not None else {}),
+            },
+            "scope": scope.to_dict(),
+            "chain": [],
+            "signature": {"alg": "Ed25519", "kid": key_id, "value": ""},
+        }
+        input_error = _validate_token_input(candidate)
+        if input_error is not None:
+            raise ValueError(input_error)
+
         import llama_index.core.instrumentation as instrument
 
         event_handler = HdpEventHandler(
@@ -320,5 +367,5 @@ class HdpInstrumentationHandler:
         return instance
 
     def export_token(self) -> Optional[dict]:
-        """Return the active token from the ContextVar."""
-        return get_token()
+        """Return a defensive copy of the active token from the ContextVar."""
+        return deepcopy(get_token())
