@@ -26,7 +26,7 @@ export class KeyRegistry {
    * Register a public key by kid.
    * @throws {Error} if the key is not a valid 32-byte Ed25519 public key.
    * @note Silently overwrites any previously registered key for the same kid.
-   *       To rotate a key safely, call `revoke(kid)` first.
+   *       To rotate a key safely, remove the prior registry entry with `revoke(kid)`.
    */
   register(kid: string, publicKey: Uint8Array): void {
     if (publicKey.length !== 32) {
@@ -40,7 +40,7 @@ export class KeyRegistry {
     return this.keys.get(kid) ?? null
   }
 
-  /** Remove a key from the registry. */
+  /** Remove a key from the registry; this does not revoke any token. */
   revoke(kid: string): void {
     this.keys.delete(kid)
   }

@@ -1,5 +1,6 @@
 export type DataClassification = 'public' | 'internal' | 'confidential' | 'restricted'
-export type AgentType = 'orchestrator' | 'sub-agent' | 'tool-executor' | 'custom'
+/** Free-form agent role label; legacy values remain valid strings. */
+export type AgentType = string
 export type PrincipalIdType = 'email' | 'uuid' | 'did' | 'poh' | 'opaque' | `x-${string}`
 
 export interface TimeWindowConstraint {

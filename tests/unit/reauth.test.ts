@@ -1,13 +1,17 @@
-import { describe, it, expect } from 'vitest'
-import { issueReAuthToken } from '../../src/token/reauth.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { issueToken } from '../../src/token/issuer.js'
+import { issueReAuthToken, issueSupersedingToken } from '../../src/token/reauth.js'
 import { extendChain } from '../../src/chain/extender.js'
 import { verifyToken } from '../../src/token/verifier.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
 import { HdpMaxHopsExceededError } from '../../src/types/errors.js'
 
-describe('issueReAuthToken', () => {
-  it('creates a new token with parent_token_id pointing to the original', async () => {
+afterEach(() => vi.useRealTimers())
+
+describe('issueSupersedingToken', () => {
+  it('signs a new record linked to the original and keeps both records valid', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
     const { privateKey, publicKey } = await generateKeyPair()
     const original = await issueToken({
       sessionId: 'sess-001',
@@ -15,74 +19,58 @@ describe('issueReAuthToken', () => {
       scope: { intent: 'initial task', data_classification: 'public', network_egress: false, persistence: false, max_hops: 1 },
       signingKey: privateKey,
       keyId: 'k1',
+      expiresInMs: 20_000,
     })
+    vi.setSystemTime(6_000)
 
-    const reAuth = await issueReAuthToken({ original, signingKey: privateKey, keyId: 'k1' })
+    const superseding = await issueSupersedingToken({
+      original, signingKey: privateKey, keyId: 'k1', expiresInMs: 500,
+    })
+    const originalVerification = await verifyToken(original, { publicKey })
+    const supersedingVerification = await verifyToken(superseding, { publicKey })
 
-    expect(reAuth.header.parent_token_id).toBe(original.header.token_id)
-    expect(reAuth.header.token_id).not.toBe(original.header.token_id)
-    expect(reAuth.chain).toHaveLength(0)
+    expect(superseding.header.parent_token_id).toBe(original.header.token_id)
+    expect(superseding.header.token_id).not.toBe(original.header.token_id)
+    expect(superseding.header.issued_at).toBe(6_000)
+    expect(superseding.header.expires_at).toBe(6_500)
+    expect(superseding.chain).toEqual([])
+    expect(originalVerification).toEqual({ valid: true })
+    expect(supersedingVerification).toEqual({ valid: true })
   })
 
-  it('inherits scope and session from original by default', async () => {
+  it('inherits principal, scope, and session unless overridden', async () => {
     const { privateKey } = await generateKeyPair()
+    const principal = { id: 'u', id_type: 'opaque' as const, display_name: 'User' }
+    const scope = { intent: 'original intent', data_classification: 'internal' as const, network_egress: true, persistence: false }
     const original = await issueToken({
-      sessionId: 'sess-002',
-      principal: { id: 'u', id_type: 'opaque' },
-      scope: { intent: 'original intent', data_classification: 'internal', network_egress: true, persistence: false },
-      signingKey: privateKey,
-      keyId: 'k1',
+      sessionId: 'sess-002', principal, scope, signingKey: privateKey, keyId: 'k1',
     })
 
-    const reAuth = await issueReAuthToken({ original, signingKey: privateKey, keyId: 'k1' })
-
-    expect(reAuth.header.session_id).toBe('sess-002')
-    expect(reAuth.scope.intent).toBe('original intent')
-    expect(reAuth.scope.data_classification).toBe('internal')
-  })
-
-  it('allows scope expansion on re-authorization', async () => {
-    const { privateKey } = await generateKeyPair()
-    const original = await issueToken({
-      sessionId: 'sess-003',
-      principal: { id: 'u', id_type: 'opaque' },
-      scope: { intent: 'read data', data_classification: 'public', network_egress: false, persistence: false, max_hops: 1 },
-      signingKey: privateKey,
-      keyId: 'k1',
-    })
-
-    const reAuth = await issueReAuthToken({
+    const inherited = await issueSupersedingToken({ original, signingKey: privateKey, keyId: 'k1' })
+    const overridden = await issueSupersedingToken({
       original,
-      scope: { intent: 'read and write data', max_hops: 3, persistence: true },
+      sessionId: 'sess-rotated',
+      principal: { id: 'other', id_type: 'opaque' },
+      scope: { intent: 'updated intent', persistence: true },
       signingKey: privateKey,
       keyId: 'k1',
     })
 
-    expect(reAuth.scope.intent).toBe('read and write data')
-    expect(reAuth.scope.max_hops).toBe(3)
-    expect(reAuth.scope.persistence).toBe(true)
+    expect(inherited.header.session_id).toBe('sess-002')
+    expect(inherited.principal).toEqual(principal)
+    expect(inherited.scope).toEqual(scope)
+    expect(overridden.header.session_id).toBe('sess-rotated')
+    expect(overridden.principal.id).toBe('other')
+    expect(overridden.scope.intent).toBe('updated intent')
+    expect(overridden.scope.persistence).toBe(true)
   })
 
-  it('re-auth token verifies successfully', async () => {
-    const { privateKey, publicKey } = await generateKeyPair()
-    const original = await issueToken({
-      sessionId: 'sess-004',
-      principal: { id: 'u', id_type: 'opaque' },
-      scope: { intent: 'task', data_classification: 'public', network_egress: false, persistence: false, max_hops: 1 },
-      signingKey: privateKey,
-      keyId: 'k1',
-    })
-
-    const reAuth = await issueReAuthToken({ original, signingKey: privateKey, keyId: 'k1' })
-    const result = await verifyToken(reAuth, { publicKey, currentSessionId: 'sess-004' })
-
-    expect(result.valid).toBe(true)
+  it('keeps the legacy issueReAuthToken export as an alias', () => {
+    expect(issueReAuthToken).toBe(issueSupersedingToken)
   })
 
-  it('full streaming session: exhaust max_hops, re-auth, continue chain', async () => {
+  it('declines to extend a full record while a superseding record starts empty', async () => {
     const { privateKey, publicKey } = await generateKeyPair()
-
-    // Phase 1: initial token with max_hops: 1
     let token = await issueToken({
       sessionId: 'sess-streaming',
       principal: { id: 'usr_alice', id_type: 'opaque' },
@@ -90,26 +78,24 @@ describe('issueReAuthToken', () => {
       signingKey: privateKey,
       keyId: 'k1',
     })
-    token = await extendChain(token, { agent_id: 'orchestrator', agent_type: 'orchestrator', action_summary: 'start analysis', parent_hop: 0 }, privateKey)
+    token = await extendChain(token, {
+      agent_id: 'orchestrator', agent_type: 'orchestrator', action_summary: 'start analysis', parent_hop: 0,
+    }, privateKey)
 
-    // max_hops exhausted — next extension would throw
-    await expect(
-      extendChain(token, { agent_id: 'subagent', agent_type: 'sub-agent', action_summary: 'continue', parent_hop: 1 }, privateKey)
-    ).rejects.toThrow('MAX_HOPS_EXCEEDED')
+    await expect(extendChain(token, {
+      agent_id: 'subagent', agent_type: 'sub-agent', action_summary: 'continue', parent_hop: 1,
+    }, privateKey)).rejects.toBeInstanceOf(HdpMaxHopsExceededError)
 
-    // Phase 2: re-authorize with expanded scope
-    const reAuth = await issueReAuthToken({
+    const superseding = await issueSupersedingToken({
       original: token,
-      scope: { intent: 'analyze dataset — phase 2', data_classification: 'confidential', network_egress: false, persistence: false, max_hops: 2 },
+      scope: { intent: 'continue analysis', max_hops: 2 },
       signingKey: privateKey,
       keyId: 'k1',
     })
-
-    expect(reAuth.header.parent_token_id).toBe(token.header.token_id)
-
-    // Phase 2 chain continues from hop 0
-    const extended = await extendChain(reAuth, { agent_id: 'subagent', agent_type: 'sub-agent', action_summary: 'phase 2 analysis', parent_hop: 0 }, privateKey)
-    const result = await verifyToken(extended, { publicKey, currentSessionId: 'sess-streaming' })
-    expect(result.valid).toBe(true)
+    expect(superseding.chain).toEqual([])
+    const extended = await extendChain(superseding, {
+      agent_id: 'subagent', agent_type: 'sub-agent', action_summary: 'continue analysis', parent_hop: 0,
+    }, privateKey)
+    expect(await verifyToken(extended, { publicKey })).toEqual({ valid: true })
   })
 })

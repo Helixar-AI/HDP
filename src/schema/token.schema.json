@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["hdp", "header", "principal", "scope", "chain", "signature"],
   "properties": {
-    "hdp": { "type": "string", "const": "0.1" },
+    "hdp": { "type": "string" },
     "header": {
       "type": "object",
       "required": ["token_id", "issued_at", "expires_at", "session_id", "version"],
@@ -18,7 +18,7 @@
         "issued_at": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "expires_at": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "session_id": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "const": "0.1" },
+        "version": { "type": "string" },
         "parent_token_id": { "type": "string", "format": "uuid" }
       }
     },
@@ -71,10 +71,7 @@
         "properties": {
           "seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
           "agent_id": { "type": "string" },
-          "agent_type": {
-            "type": "string",
-            "enum": ["orchestrator", "sub-agent", "tool-executor", "custom"]
-          },
+          "agent_type": { "type": "string" },
           "agent_fingerprint": { "type": "string" },
           "timestamp": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
           "action_summary": { "type": "string" },
@@ -87,7 +84,7 @@
       "type": "object",
       "required": ["alg", "kid", "value"],
       "properties": {
-        "alg": { "type": "string", "const": "Ed25519" },
+        "alg": { "type": "string" },
         "kid": { "type": "string", "minLength": 1 },
         "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" },
         "signed_fields": {

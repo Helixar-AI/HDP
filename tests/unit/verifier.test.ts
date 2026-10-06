@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { verifyToken } from '../../src/token/verifier.js'
 import { issueToken } from '../../src/token/issuer.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
@@ -18,40 +18,34 @@ async function makeToken(overrides?: Record<string, unknown>) {
 describe('verifyToken', () => {
   it('VALID for a freshly issued token', async () => {
     const { token, publicKey } = await makeToken()
-    const result = await verifyToken(token, { publicKey, currentSessionId: 'sess-abc' })
-    expect(result.valid).toBe(true)
+    const result = await verifyToken(token, { publicKey })
+    expect(result).toEqual({ valid: true })
   })
 
-  it('INVALID for an expired token', async () => {
+  it('keeps expiry out of integrity verification', async () => {
     const { token, publicKey } = await makeToken()
+    vi.spyOn(Date, 'now').mockReturnValue(Number.MAX_SAFE_INTEGER)
     const result = await verifyToken(token, {
       publicKey,
-      currentSessionId: 'sess-abc',
-      now: token.header.expires_at,
     })
-    expect(result.valid).toBe(false)
-    expect(result.error?.code).toBe('TOKEN_EXPIRED')
+    vi.restoreAllMocks()
+    expect(result).toEqual({ valid: true })
   })
 
   it('INVALID if root signature tampered', async () => {
     const { token, publicKey } = await makeToken()
     const tampered = { ...token, scope: { ...token.scope, intent: 'EVIL TASK' } }
-    const result = await verifyToken(tampered as any, { publicKey, currentSessionId: 'sess-abc' })
+    const result = await verifyToken(tampered as any, { publicKey })
     expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(2)
     expect(result.error?.code).toBe('SIGNATURE_INVALID')
   })
 
-  it('INVALID if session_id does not match current session', async () => {
+  it('reports an unknown hdp version at step 1', async () => {
     const { token, publicKey } = await makeToken()
-    const result = await verifyToken(token, { publicKey, currentSessionId: 'DIFFERENT-SESSION' })
+    const badVersion = { ...token, hdp: '99.0', header: { ...token.header, version: '99.0' } }
+    const result = await verifyToken(badVersion, { publicKey })
     expect(result.valid).toBe(false)
-    expect(result.error?.code).toBe('SESSION_MISMATCH')
-  })
-
-  it('INVALID if unknown hdp version', async () => {
-    const { token, publicKey } = await makeToken()
-    const badVersion = { ...token, hdp: '99.0' as any }
-    const result = await verifyToken(badVersion, { publicKey, currentSessionId: 'sess-abc' })
-    expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(1)
   })
 })

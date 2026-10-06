@@ -14,6 +14,21 @@ describe('validateToken', () => {
     expect(() => validateToken(token)).not.toThrow()
   })
 
+  it('accepts an arbitrary agent_type string', () => {
+    const token = {
+      hdp: '0.1',
+      header: { token_id: '550e8400-e29b-41d4-a716-446655440000', issued_at: 1000, expires_at: 2000, session_id: 's1', version: '0.1' },
+      principal: { id: 'user1', id_type: 'opaque' },
+      scope: { intent: 'do thing', data_classification: 'public', network_egress: false, persistence: false },
+      chain: [{
+        seq: 1, agent_id: 'agent', agent_type: 'workflow/worker:v7', timestamp: 1100,
+        action_summary: 'record task execution', parent_hop: 0, hop_signature: 'A'.repeat(86),
+      }],
+      signature: { alg: 'Ed25519', kid: 'k1', value: 'A'.repeat(86) },
+    }
+    expect(() => validateToken(token)).not.toThrow()
+  })
+
   it('rejects token missing required principal.id', () => {
     const bad = { hdp: '0.1', header: {}, principal: { id_type: 'opaque' }, scope: {}, chain: [], signature: {} }
     expect(() => validateToken(bad)).toThrow('SCHEMA_INVALID')

@@ -2,9 +2,9 @@ import type { HdpToken } from '../types/token.js'
 import { HdpSchemaError } from '../types/errors.js'
 import { validateToken } from '../schema/validator.js'
 
-/** Standard HDP token header defined by draft -02. */
+/** Standard HDP token header defined by draft -03. */
 export const HDP_HEADER = 'HDP-Token'
-/** Standard HDP token-reference header defined by draft -02. */
+/** Standard HDP token-reference header defined by draft -03. */
 export const HDP_REF_HEADER = 'HDP-Token-Ref'
 
 /**
