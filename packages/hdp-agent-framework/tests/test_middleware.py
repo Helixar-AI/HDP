@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Helixar Limited
-"""Failing tests for HdpMiddleware (agent-framework).
-
-All tests in this file MUST FAIL until middleware.py is implemented (Task 4).
-Expected failure reason: ImportError — HdpMiddleware, ScopePolicy,
-HDPScopeViolationError are not yet exported from hdp_agent_framework.
-"""
+"""Tests for the agent-framework HDP middleware."""
 
 from __future__ import annotations
 
@@ -81,10 +76,16 @@ async def _process(mw: HdpMiddleware, agent_name: str = "agent-1") -> None:
     await mw.process(ctx, AsyncMock())
 
 
-async def _function_middleware_call(mw: HdpMiddleware, tool_name: str) -> None:
+async def _function_middleware_call(
+    mw: HdpMiddleware,
+    tool_name: str,
+    call_next: AsyncMock | None = None,
+) -> AsyncMock:
     """Invoke mw._function_middleware with a fake function context."""
     ctx = FakeFunctionContext(function=FakeFunctionInfo(name=tool_name))
-    await mw._function_middleware(ctx, AsyncMock())
+    next_call = call_next or AsyncMock()
+    await mw._function_middleware(ctx, next_call)
+    return next_call
 
 
 # ---------------------------------------------------------------------------
@@ -233,32 +234,35 @@ class TestFunctionMiddlewareScopeEnforcement:
             scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
         )
         await _process(mw)
-        await _function_middleware_call(mw, "forbidden_tool")
+        call_next = AsyncMock()
+        await _function_middleware_call(mw, "forbidden_tool", call_next)
+        call_next.assert_awaited_once()
         token = mw.export_token()
         assert token["scope"].get("extensions") is None
         assert token["chain"][-1]["agent_id"] == "forbidden_tool"
         assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: forbidden_tool"
         assert token["chain"][-1]["hop_signature"]
 
-    @pytest.mark.asyncio
-    async def test_strict_mode_raises_on_unauthorized_tool(self):
-        mw, _, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
-            strict=True,
-        )
-        await _process(mw)
-        with pytest.raises(HDPScopeViolationError):
-            await _function_middleware_call(mw, "forbidden_tool")
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
+                strict=True,
+            )
 
     @pytest.mark.asyncio
-    async def test_strict_mode_does_not_raise_on_authorized_tool(self):
+    async def test_full_chain_does_not_skip_tool_action(self):
         mw, _, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["safe_tool"]),
-            strict=True,
+            scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"], max_hops=1),
         )
         await _process(mw)
-        # Must not raise
-        await _function_middleware_call(mw, "safe_tool")
+        call_next = AsyncMock()
+
+        await _function_middleware_call(mw, "allowed_tool", call_next)
+
+        call_next.assert_awaited_once()
+        assert len(mw.export_token()["chain"]) == 1
 
 
 # ---------------------------------------------------------------------------

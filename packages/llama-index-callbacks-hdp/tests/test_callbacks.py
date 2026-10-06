@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from llama_index.core.callbacks import CBEventType, EventPayload
 from llama_index.callbacks.hdp import (
     HdpCallbackHandler,
+    HdpInstrumentationHandler,
     HdpPrincipal,
     HDPScopeViolationError,
     ScopePolicy,
@@ -171,18 +172,13 @@ class TestScopeEnforcement:
         assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: exec_code"
         assert token["chain"][-1]["hop_signature"]
 
-    def test_strict_mode_raises(self):
-        handler, _, _ = _make_handler(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        handler.start_trace("sv3")
-        with pytest.raises(HDPScopeViolationError) as exc_info:
-            handler.on_event_start(
-                CBEventType.FUNCTION_CALL,
-                payload={EventPayload.TOOL: FakeTool("exec_code")},
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_handler(
+                scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
+                strict=True,
             )
-        assert exc_info.value.tool == "exec_code"
 
     def test_no_authorized_tools_means_all_allowed(self):
         handler, _, _ = _make_handler(scope=ScopePolicy(intent="x"))
@@ -203,6 +199,16 @@ class TestScopeEnforcement:
                 payload={EventPayload.TOOL: FakeTool(f"tool_{i}")},
             )
         assert len(get_token()["chain"]) == 2
+
+    def test_instrumentation_raise_option_is_rejected_at_construction(self):
+        key, _ = _generate_key()
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            HdpInstrumentationHandler.init(
+                signing_key=key,
+                principal=HdpPrincipal(id="user@test.com", id_type="email"),
+                scope=ScopePolicy(intent="x"),
+                on_violation="raise",
+            )
 
 
 class TestNonBlocking:

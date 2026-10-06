@@ -23,7 +23,7 @@ class HdpTokenMissingError(Exception):
 
 
 class HdpTokenExpiredError(Exception):
-    """Current token's expires_at has passed."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
 
 def _resolve_key(signing_key: bytes | str | None) -> bytes:
@@ -143,13 +143,6 @@ class HdpMiddleware:
             raise HdpTokenMissingError(
                 "No current token. Call issue_token() before extend_chain()."
             )
-        now_ms = int(time.time() * 1000)
-        expires_at = self._current_token.get("header", {}).get("expires_at", 0)
-        if now_ms > expires_at:
-            raise HdpTokenExpiredError(
-                f"Current HDP token expired at {expires_at}. Call issue_token() to rotate."
-            )
-
         new_token = extend_token_chain(
             parent_token=self._current_token,
             signing_key=self.signing_key,
@@ -158,7 +151,7 @@ class HdpMiddleware:
             additional_scope=additional_scope or [],
         )
         self._current_token = new_token
-        self._hop_count += 1
+        self._hop_count = len(new_token.get("chain", []))
         return {"new_token": json.dumps(new_token)}
 
     def verify_token(self, token: str) -> dict:

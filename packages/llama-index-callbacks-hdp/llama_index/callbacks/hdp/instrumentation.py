@@ -121,7 +121,6 @@ class HdpEventHandler(BaseEventHandler):
         scope: ScopePolicy,
         key_id: str,
         expires_in_ms: int,
-        strict: bool,
         on_token_ready: Optional[Callable[[dict], None]],
     ) -> None:
         self._signing_key = signing_key
@@ -129,7 +128,6 @@ class HdpEventHandler(BaseEventHandler):
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._on_token_ready = on_token_ready
         self._hop_seq = 0
 
@@ -189,8 +187,6 @@ class HdpEventHandler(BaseEventHandler):
         authorized = self._scope.authorized_tools
         out_of_scope = authorized is not None and tool_name not in authorized
         if out_of_scope:
-            if self._strict:
-                raise HDPScopeViolationError(tool_name, authorized)
             logger.warning(
                 "HDP scope violation: tool '%s' not in authorized_tools %s",
                 tool_name,
@@ -292,15 +288,16 @@ class HdpInstrumentationHandler:
             scope:          ScopePolicy (intent, authorized_tools, max_hops, etc.).
             key_id:         Key identifier for rotation support.
             expires_in_ms:  Token TTL in milliseconds (default 24h).
-            on_violation:   "log" (default) or "raise".
+            on_violation:   "log" (default). "raise" fails during construction.
             on_token_ready: Optional callback invoked with the final token at query end.
 
         Returns:
             The HdpInstrumentationHandler instance (holds references to wired handlers).
         """
-        import llama_index.core.instrumentation as instrument
+        if on_violation == "raise":
+            raise ValueError("HDP tokens are records and cannot gate actions")
 
-        strict = on_violation == "raise"
+        import llama_index.core.instrumentation as instrument
 
         event_handler = HdpEventHandler(
             signing_key=signing_key,
@@ -308,7 +305,6 @@ class HdpInstrumentationHandler:
             scope=scope,
             key_id=key_id,
             expires_in_ms=expires_in_ms,
-            strict=strict,
             on_token_ready=on_token_ready,
         )
         span_handler = HdpSpanHandler()

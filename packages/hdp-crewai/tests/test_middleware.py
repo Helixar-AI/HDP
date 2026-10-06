@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import json
-import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -199,15 +198,13 @@ class TestScopeEnforcement:
         assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: BrowserTool"
         assert token["chain"][-1]["hop_signature"]
 
-    def test_strict_mode_raises(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["SearchTool"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        with pytest.raises(HDPScopeViolationError) as exc_info:
-            mw.on_step(FakeAgentAction(tool="BrowserTool"))
-        assert exc_info.value.tool == "BrowserTool"
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["SearchTool"]),
+                strict=True,
+            )
 
     def test_agent_finish_not_checked(self):
         """AgentFinish has no .tool — should be a no-op."""
@@ -273,28 +270,33 @@ class TestVerification:
         result = verify_chain(mw.export_token(), other_pub)
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         mw, pub = _make_middleware()
         mw.before_kickoff()
         token = mw.export_token()
-        # Set expiry in the past
-        token["header"]["expires_at"] = int(time.time() * 1000) - 1000
-        # Re-sign to keep root sig valid
+        token["header"]["issued_at"] = 0
+        token["header"]["expires_at"] = 1
         from hdp_crewai._crypto import sign_root
-        key, _ = _generate_key()
-        # Use a fresh signed token so root sig is valid but expired
-        mw2, pub2 = _make_middleware()
-        mw2.before_kickoff()
-        t2 = mw2.export_token()
-        t2["header"]["expires_at"] = int(time.time() * 1000) - 1000
-        # Re-sign
-        unsigned = {k: v for k, v in t2.items() if k != "signature"}
-        priv2 = Ed25519PrivateKey.generate()
-        sig = sign_root(unsigned, priv2.private_bytes_raw(), "k")
-        t2["signature"] = sig
-        pub2_fresh = priv2.public_key()
-        result = verify_chain(t2, pub2_fresh)
-        assert any("expired" in v.lower() for v in result.violations)
+        token["signature"] = sign_root(token, mw._signing_key, mw._key_id)
+        mw.on_task_end(FakeTaskOutput(agent="A", raw="after expiry"))
+
+        result = verify_chain(mw.export_token(), pub)
+
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
+
+    def test_version_failure_stops_before_root_signature(self):
+        mw, pub = _make_middleware()
+        mw.before_kickoff()
+        token = mw.export_token()
+        token["hdp"] = "0.2"
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 1" in result.violations[0]
 
     def test_empty_chain_valid(self):
         mw, pub = _make_middleware()

@@ -6,7 +6,6 @@ Run with: cd packages/hdp-langchain && PYTHONPATH=src pytest tests/ -v
 from __future__ import annotations
 
 import base64
-import time
 import uuid
 from unittest.mock import MagicMock
 
@@ -223,26 +222,14 @@ class TestScopeEnforcement:
             for hop in token["chain"]
         )
 
-    def test_strict_mode_raises_on_unauthorized_tool(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        handler = mw.get_callback_handler()
-        with pytest.raises(HDPScopeViolationError) as exc_info:
-            _invoke_on_tool_start(handler, "browser_tool")
-        assert exc_info.value.tool == "browser_tool"
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
+                strict=True,
+            )
 
-    def test_strict_mode_allows_authorized_tool(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        handler = mw.get_callback_handler()
-        _invoke_on_tool_start(handler, "web_search")  # should not raise
-        assert len(mw.export_token()["chain"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -293,23 +280,20 @@ class TestVerification:
         result = verify_chain(mw.export_token(), other_pub)
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         from hdp_langchain._crypto import sign_root
-        priv = Ed25519PrivateKey.generate()
-        pub = priv.public_key()
-        mw = HdpMiddleware(
-            signing_key=priv.private_bytes_raw(),
-            session_id="s",
-            principal=HdpPrincipal(id="u", id_type="opaque"),
-            scope=ScopePolicy(intent="x"),
-        )
+        mw, pub = _make_middleware()
         mw.before_kickoff()
         token = mw.export_token()
-        token["header"]["expires_at"] = int(time.time() * 1000) - 1000
-        unsigned = {k: v for k, v in token.items() if k != "signature"}
-        token["signature"] = sign_root(unsigned, priv.private_bytes_raw(), "k")
-        result = verify_chain(token, pub)
-        assert any("expired" in v.lower() for v in result.violations)
+        token["header"]["issued_at"] = 0
+        token["header"]["expires_at"] = 1
+        token["signature"] = sign_root(token, mw._signing_key, mw._key_id)
+        mw._extend_chain(agent_id="tool-a", action_summary="after expiry", agent_type="custom")
+
+        result = verify_chain(mw.export_token(), pub)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
 
     def test_empty_chain_valid(self):
         mw, pub = _make_middleware()

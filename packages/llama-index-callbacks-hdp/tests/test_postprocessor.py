@@ -1,4 +1,4 @@
-"""Tests for HdpNodePostprocessor — retrieval hop recording and scope enforcement."""
+"""Tests for HdpNodePostprocessor retrieval and classification audit recording."""
 
 from __future__ import annotations
 
@@ -123,7 +123,7 @@ class TestDataClassificationEnforcement:
         pp = HdpNodePostprocessor(signing_key=key, check_data_classification=True, strict=False)
         nodes = _make_nodes("public", "restricted")  # restricted > internal
         result = pp._postprocess_nodes(nodes)
-        assert len(result) == 2  # observe mode: nodes still returned
+        assert result == nodes
         token = get_token()
         assert token["scope"].get("extensions") is None
         assert token["chain"][0]["action_summary"] == (
@@ -131,12 +131,11 @@ class TestDataClassificationEnforcement:
         )
         assert token["chain"][0]["hop_signature"]
 
-    def test_strict_mode_raises_on_classification_violation(self):
+    def test_strict_mode_is_rejected_at_construction(self):
         key, _ = _generate_key()
-        _issue_token(key, ScopePolicy(intent="x", data_classification="internal"))
-        pp = HdpNodePostprocessor(signing_key=key, check_data_classification=True, strict=True)
-        with pytest.raises(HDPScopeViolationError):
-            pp._postprocess_nodes(_make_nodes("restricted"))
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            HdpNodePostprocessor(signing_key=key, check_data_classification=True, strict=True)
 
     def test_check_data_classification_false_skips_check(self):
         key, _ = _generate_key()

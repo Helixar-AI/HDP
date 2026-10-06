@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Helixar Limited
-"""HdpMiddleware — non-blocking HDP audit trail for agent-framework agents.
+"""HdpMiddleware record-only audit trail for agent-framework agents.
 
 Design considerations implemented:
-  #1 Scope enforcement: _function_middleware() inspects tool calls against
-     authorized_tools. In strict mode raises HDPScopeViolationError; otherwise
-     logs and records violation.
-  #2 Delegation depth limits: max_hops is enforced in _extend_chain().
+  #1 Scope observation: _function_middleware() records out-of-scope attempts.
+  #2 Recording depth: chain extension stops at max_hops.
   #3 Token size / performance: non-blocking throughout; Ed25519 = 64 bytes/hop.
   #4 Verification: see hdp_agent_framework.verify.verify_chain().
 
@@ -46,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -94,14 +92,13 @@ class ScopePolicy:
 
 
 class HdpMiddleware:
-    """Non-blocking HDP middleware for agent-framework.
+    """Record HDP provenance for agent-framework without gating actions.
 
     Hooks into agent-framework's ChatMiddleware protocol to build a
     tamper-evident delegation chain.
 
-    All HDP operations are non-blocking by default: failures are logged as
-    warnings and agent execution continues unaffected. Set ``strict=True`` to
-    have scope violations raise HDPScopeViolationError and halt the agent.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -114,13 +111,14 @@ class HdpMiddleware:
         expires_in_ms: int = 86_400_000,
         strict: bool = False,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         self._signing_key = signing_key
         self._session_id = session_id
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._token: Optional[dict] = None
         self._hop_seq = 0
 
@@ -156,11 +154,8 @@ class HdpMiddleware:
         """Function/tool middleware entry point.
 
         1. Get tool name from context.function.name.
-        2. If authorized_tools is None: await call_next() and return.
-        3. If tool NOT in authorized_tools:
-             If strict=True: raise HDPScopeViolationError.
-             Else: record violation in token, then await call_next().
-        4. Else (authorized): await call_next().
+        2. Record an out-of-scope attempt when authorized_tools is set.
+        3. Await call_next() for every tool call.
         """
         tool_name = context.function.name
         authorized = self._scope.authorized_tools
@@ -170,8 +165,6 @@ class HdpMiddleware:
             return
 
         if tool_name not in authorized:
-            if self._strict:
-                raise HDPScopeViolationError(tool_name, authorized)
             logger.warning(
                 "HDP scope violation: tool '%s' not in authorized_tools %s",
                 tool_name,
@@ -257,7 +250,7 @@ class HdpMiddleware:
     def _extend_chain(self, agent_id: str, action_summary: str = "", agent_type: str = "sub-agent") -> None:
         """Append a signed hop to the delegation chain.
 
-        Enforces max_hops — hops beyond the limit are skipped and logged.
+        A full chain is not extended; the agent-framework action continues.
         """
         if self._token is None:
             return

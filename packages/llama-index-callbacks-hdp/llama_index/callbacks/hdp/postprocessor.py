@@ -1,4 +1,4 @@
-"""HdpNodePostprocessor — inline scope enforcement in the LlamaIndex RAG pipeline.
+"""HdpNodePostprocessor retrieval audit recording in a LlamaIndex RAG pipeline.
 
 Runs after retrieval, before synthesis. Validates scope and records retrieval
 as a hop in the HDP delegation chain.
@@ -8,7 +8,7 @@ Usage:
 
     postprocessor = HdpNodePostprocessor(
         signing_key=ed25519_private_key_bytes,  # same key used for HdpCallbackHandler
-        strict=False,
+        check_data_classification=True,
     )
 
     query_engine = index.as_query_engine(
@@ -39,18 +39,17 @@ _CLASSIFICATION_LEVELS = {"public": 0, "internal": 1, "confidential": 2, "restri
 
 
 class HdpNodePostprocessor(BaseNodePostprocessor):
-    """Records retrieval hops and optionally enforces data classification scope.
+    """Records retrieval hops and data-classification observations.
 
     Each call to _postprocess_nodes extends the active HDP token's delegation
     chain with a retrieval hop. This ensures every document retrieval is
     cryptographically recorded as part of the authorization provenance.
 
     Args:
-        strict: If True, raise HDPScopeViolationError on classification
-                violations. If False (default), log and continue.
+        strict: Deprecated option. True raises ValueError during construction.
         check_data_classification: If True (default), inspect each node's
-                metadata for a 'classification' key and validate it against
-                scope.data_classification.
+                metadata for a 'classification' key and record whether it is
+                above scope.data_classification.
     """
 
     strict: bool = False
@@ -62,6 +61,8 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
         strict: bool = False,
         check_data_classification: bool = True,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         super().__init__()
         self._signing_key = signing_key
         self.strict = strict
@@ -116,11 +117,6 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
                 f"HDP: retrieved nodes with classification {violated_classes} "
                 f"exceed allowed level '{allowed_classification}'"
             )
-            if self.strict:
-                raise HDPScopeViolationError(
-                    tool=f"retrieval[{violated_classes}]",
-                    authorized_tools=[f"retrieval[<={allowed_classification}]"],
-                )
             logger.warning(msg)
             self._record_classification_violation(token, violated_classes, allowed_classification)
 
@@ -128,6 +124,10 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
 
     def _extend_chain(self, token: dict, nodes: List[NodeWithScore], query_str: str) -> None:
         current_chain: list = token.get("chain", [])
+        max_hops = token.get("scope", {}).get("max_hops")
+        if max_hops is not None and len(current_chain) >= max_hops:
+            logger.warning("HDP max_hops (%d) reached; retrieval hop was not recorded", max_hops)
+            return
         next_seq = len(current_chain) + 1
 
         summary_parts = [f"retrieval: {len(nodes)} nodes"]
@@ -170,6 +170,10 @@ class HdpNodePostprocessor(BaseNodePostprocessor):
             logger.warning("HDP postprocessor: no signing key configured; classification violation was not recorded")
             return
         current_chain = token.get("chain", [])
+        max_hops = token.get("scope", {}).get("max_hops")
+        if max_hops is not None and len(current_chain) >= max_hops:
+            logger.warning("HDP max_hops (%d) reached; classification violation was not recorded", max_hops)
+            return
         next_seq = len(current_chain) + 1
         unsigned_hop = {
             "seq": next_seq,

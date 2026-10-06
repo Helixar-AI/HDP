@@ -16,11 +16,11 @@ HDP_TOOLS = [
                     "scope": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Optional list of permitted action scopes",
+                        "description": "Optional action scope labels declared at issuance",
                     },
                     "expires_in": {
                         "type": "integer",
-                        "description": "Optional token lifetime in seconds (default: 3600)",
+                        "description": "Optional token recording period in seconds (default: 3600)",
                     },
                 },
             },
@@ -55,8 +55,8 @@ HDP_TOOLS = [
         "function": {
             "name": "hdp_verify_token",
             "description": (
-                "Verify an HDP token before performing sensitive actions. "
-                "Returns full provenance details."
+                "Verify the integrity of an HDP record for audit. "
+                "Verification does not authorize or gate actions."
             ),
             "parameters": {
                 "type": "object",

@@ -1,9 +1,8 @@
 """HdpMiddleware — non-blocking HDP audit trail for CrewAI crews.
 
 Design considerations implemented:
-  #1 Scope enforcement: on_step() inspects AgentAction.tool against authorized_tools.
-     In strict mode raises HDPScopeViolationError; otherwise logs and records violation.
-  #2 Delegation depth limits: max_hops is enforced in on_task_end().
+  #1 Scope observation: on_step() records out-of-scope AgentAction.tool values.
+  #2 Recording depth: chain extension stops at max_hops.
   #3 Token size / performance: non-blocking throughout; Ed25519 = 64 bytes/hop.
   #4 Verification: see hdp_crewai.verify.verify_chain().
   #5 Memory integration: after_kickoff() persists the token to crewAI's storage path.
@@ -45,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -93,14 +92,13 @@ class ScopePolicy:
 
 
 class HdpMiddleware:
-    """Non-blocking HDP middleware for CrewAI.
+    """Record HDP provenance for CrewAI without gating crew actions.
 
     Hooks into CrewAI's before_kickoff_callbacks, step_callback, task_callback,
     and after_kickoff_callbacks to build a tamper-evident delegation chain.
 
-    All HDP operations are non-blocking by default: failures are logged as
-    warnings and crew execution continues unaffected. Set ``strict=True`` to
-    have scope violations raise HDPScopeViolationError and halt the crew.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -114,13 +112,14 @@ class HdpMiddleware:
         strict: bool = False,
         persist_token: bool = True,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         self._signing_key = signing_key
         self._session_id = session_id
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._persist_token = persist_token
         self._token: Optional[dict] = None
         self._hop_seq = 0
@@ -153,14 +152,12 @@ class HdpMiddleware:
             logger.warning("HDP before_kickoff failed (non-blocking): %s", exc)
 
     def on_step(self, step_output: Any) -> None:
-        """Design consideration #1 — Scope enforcement.
+        """Record an out-of-scope tool attempt after the agent step.
 
         Called after each agent step via step_callback. Inspects AgentAction.tool
         against scope.authorized_tools.
 
-        - strict=False (default): logs a warning and appends a signed hop that
-          identifies the attempted out-of-scope action.
-        - strict=True: raises HDPScopeViolationError, halting the crew.
+        An out-of-scope tool is logged and appended as a signed hop.
         """
         # Only check AgentAction objects (not AgentFinish)
         tool = getattr(step_output, "tool", None)
@@ -169,9 +166,6 @@ class HdpMiddleware:
 
         authorized = self._scope.authorized_tools
         if authorized is not None and tool not in authorized:
-            if self._strict:
-                raise HDPScopeViolationError(tool, authorized)
-
             logger.warning(
                 "HDP scope violation: tool '%s' not in authorized_tools %s",
                 tool,
@@ -180,10 +174,10 @@ class HdpMiddleware:
             self._record_scope_violation(tool)
 
     def on_task_end(self, task_output: Any) -> None:
-        """Design consideration #2 — Delegation depth.
+        """Record a task-end hop when the chain has remaining capacity.
 
-        Extends the delegation chain after each task. Wired to task_callback.
-        Enforces max_hops — hops beyond the limit are skipped and logged.
+        Extends the delegation chain after each task. A full chain is not extended.
+        CrewAI task execution is unaffected.
         """
         if self._token is None:
             return
@@ -265,7 +259,7 @@ class HdpMiddleware:
             self.after_kickoff,
         ]
 
-        # Wrap step_callback (scope enforcement — design consideration #1)
+        # Wrap step_callback for scope observation.
         existing_step_cb = getattr(crew, "step_callback", None)
         if existing_step_cb is not None:
             def _chained_step(step_output: Any) -> None:

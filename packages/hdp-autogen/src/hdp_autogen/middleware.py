@@ -1,9 +1,8 @@
 """HdpMiddleware — non-blocking HDP audit trail for AutoGen agents.
 
 Design considerations implemented:
-  #1 Scope enforcement: _on_message_receive() inspects tool calls against authorized_tools.
-     In strict mode raises HDPScopeViolationError; otherwise logs and records violation.
-  #2 Delegation depth limits: max_hops is enforced in _extend_chain().
+  #1 Scope observation: _on_message_receive() records out-of-scope tool calls.
+  #2 Recording depth: chain extension stops at max_hops.
   #3 Token size / performance: non-blocking throughout; Ed25519 = 64 bytes/hop.
   #4 Verification: see hdp_autogen.verify.verify_chain().
   #5 GroupChat integration: configure() hooks into GroupChatManager and ConversableAgent.
@@ -48,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -96,14 +95,13 @@ class ScopePolicy:
 
 
 class HdpMiddleware:
-    """Non-blocking HDP middleware for AutoGen.
+    """Record HDP provenance for AutoGen without gating agent actions.
 
     Hooks into AutoGen's ConversableAgent hooks and GroupChatManager message
     routing to build a tamper-evident delegation chain.
 
-    All HDP operations are non-blocking by default: failures are logged as
-    warnings and agent execution continues unaffected. Set ``strict=True`` to
-    have scope violations raise HDPScopeViolationError and halt the agent.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -116,13 +114,14 @@ class HdpMiddleware:
         expires_in_ms: int = 24 * 60 * 60 * 1000,
         strict: bool = False,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         self._signing_key = signing_key
         self._session_id = session_id
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._token: Optional[dict] = None
         self._hop_seq = 0
 
@@ -182,10 +181,10 @@ class HdpMiddleware:
         return message
 
     def on_message_receive(self, sender: Any, message: Any, recipient: Any, silent: bool = False) -> Any:
-        """Hook for scope enforcement on incoming messages.
+        """Record out-of-scope tool calls found in incoming messages.
 
         Inspects tool calls in the message and validates them against
-        authorized_tools. In strict mode, raises HDPScopeViolationError.
+        authorized_tools without changing the message.
 
         Returns the message unchanged so AutoGen's hook pipeline continues.
         """
@@ -196,8 +195,6 @@ class HdpMiddleware:
 
         for tool in tools:
             if tool not in authorized:
-                if self._strict:
-                    raise HDPScopeViolationError(tool, authorized)
                 logger.warning(
                     "HDP scope violation: tool '%s' not in authorized_tools %s",
                     tool,
@@ -323,9 +320,9 @@ class HdpMiddleware:
     # ------------------------------------------------------------------
 
     def _extend_chain(self, agent_id: str, action_summary: str, agent_type: str = "sub-agent") -> None:
-        """Append a signed hop to the delegation chain.
+        """Append a signed hop when the chain has remaining capacity.
 
-        Enforces max_hops — hops beyond the limit are skipped and logged.
+        A full chain is not extended; the AutoGen message still continues.
         """
         if self._token is None:
             return

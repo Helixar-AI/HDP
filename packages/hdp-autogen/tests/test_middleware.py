@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import json
-import time
 from unittest.mock import MagicMock
 
 import jcs
@@ -231,16 +230,13 @@ class TestScopeEnforcement:
         assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: browser_tool"
         assert token["chain"][-1]["hop_signature"]
 
-    def test_strict_mode_raises(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        msg = {"content": "browsing", "tool_calls": [{"function": {"name": "browser_tool"}}]}
-        with pytest.raises(HDPScopeViolationError) as exc_info:
-            mw.on_message_receive(None, msg, None)
-        assert exc_info.value.tool == "browser_tool"
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
+                strict=True,
+            )
 
     def test_no_authorized_tools_means_all_allowed(self):
         mw, _ = _make_middleware(scope=ScopePolicy(intent="x"))
@@ -252,12 +248,12 @@ class TestScopeEnforcement:
     def test_legacy_function_call_format(self):
         mw, _ = _make_middleware(
             scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
         )
         mw.before_kickoff()
         msg = {"content": "browsing", "function_call": {"name": "browser_tool"}}
-        with pytest.raises(HDPScopeViolationError):
-            mw.on_message_receive(None, msg, None)
+        result = mw.on_message_receive(None, msg, None)
+        assert result is msg
+        assert mw.export_token()["chain"][-1]["agent_id"] == "browser_tool"
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +267,7 @@ class TestVerification:
         mw.on_message_send(FakeAgent("A1"), "r1", None)
         mw.on_message_send(FakeAgent("A2"), "r2", None)
         token = mw.export_token()
-        result = verify_chain(token, pub)
+        result = verify_chain(mw.export_token(), pub)
         assert result.valid
         assert result.hop_count == 2
         assert len(result.violations) == 0
@@ -310,24 +306,20 @@ class TestVerification:
         result = verify_chain(mw.export_token(), other_pub)
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         from hdp_autogen._crypto import sign_root
-        priv = Ed25519PrivateKey.generate()
-        pub = priv.public_key()
-        mw = HdpMiddleware(
-            signing_key=priv.private_bytes_raw(),
-            session_id="s",
-            principal=HdpPrincipal(id="u", id_type="opaque"),
-            scope=ScopePolicy(intent="x"),
-        )
+        mw, pub = _make_middleware()
         mw.before_kickoff()
         token = mw.export_token()
-        # Force expiry in the past and re-sign
-        token["header"]["expires_at"] = int(time.time() * 1000) - 1000
-        unsigned = {k: v for k, v in token.items() if k != "signature"}
-        token["signature"] = sign_root(unsigned, priv.private_bytes_raw(), "k")
-        result = verify_chain(token, pub)
-        assert any("expired" in v.lower() for v in result.violations)
+        token["header"]["issued_at"] = 0
+        token["header"]["expires_at"] = 1
+        token["signature"] = sign_root(token, mw._signing_key, mw._key_id)
+        mw.on_message_send(FakeAgent("A"), "after expiry", None)
+
+        result = verify_chain(mw.export_token(), pub)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
 
     def test_empty_chain_valid(self):
         mw, pub = _make_middleware()
@@ -362,14 +354,14 @@ class TestConfigureConversableAgent:
     def test_receive_hook_checks_scope(self):
         mw, _ = _make_middleware(
             scope=ScopePolicy(intent="x", authorized_tools=["allowed"]),
-            strict=True,
         )
         mw.before_kickoff()
         agent = FakeAgent("test-agent")
         mw.configure(agent)
         msg = {"content": "call", "tool_calls": [{"function": {"name": "forbidden"}}]}
-        with pytest.raises(HDPScopeViolationError):
-            agent.fire_receive(msg)
+        result = agent.fire_receive(msg)
+        assert result is msg
+        assert mw.export_token()["chain"][-1]["agent_id"] == "forbidden"
 
 
 class TestConfigureGroupChatManager:

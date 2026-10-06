@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -90,9 +90,8 @@ class HdpCallbackHandler(BaseCallbackHandler):
     Hooks into start_trace / end_trace for token lifecycle, and
     on_event_start / on_event_end for tool calls and LLM events.
 
-    All HDP operations are non-blocking by default: failures are logged
-    and execution continues. Set strict=True to raise HDPScopeViolationError
-    on scope violations.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -105,13 +104,14 @@ class HdpCallbackHandler(BaseCallbackHandler):
         strict: bool = False,
         on_token_ready: Optional[Callable[[dict], None]] = None,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         super().__init__(event_starts_to_ignore=[], event_ends_to_ignore=[])
         self._signing_key = signing_key
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._on_token_ready = on_token_ready
         self._hop_seq = 0
 
@@ -175,8 +175,6 @@ class HdpCallbackHandler(BaseCallbackHandler):
                 self._handle_query_start(payload or {})
             elif event_type == CBEventType.EXCEPTION:
                 self._handle_exception(payload or {})
-        except HDPScopeViolationError:
-            raise
         except Exception as exc:
             logger.warning("HDP on_event_start failed (non-blocking): %s", exc)
         return event_id
@@ -213,8 +211,6 @@ class HdpCallbackHandler(BaseCallbackHandler):
         authorized = self._scope.authorized_tools
         out_of_scope = authorized is not None and tool_name not in authorized
         if out_of_scope:
-            if self._strict:
-                raise HDPScopeViolationError(tool_name, authorized)
             logger.warning(
                 "HDP scope violation: tool '%s' not in authorized_tools %s",
                 tool_name,

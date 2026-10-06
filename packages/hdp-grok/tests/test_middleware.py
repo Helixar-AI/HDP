@@ -13,6 +13,7 @@ from hdp_grok.middleware import (
     HdpTokenMissingError,
     HdpTokenExpiredError,
 )
+from hdp_grok._crypto import _sign_root
 
 
 def _make_key() -> bytes:
@@ -116,12 +117,23 @@ class TestMiddlewareExtendChain:
         with pytest.raises(HdpTokenMissingError):
             m.extend_chain("agent-X")
 
-    def test_extend_chain_on_expired_token_raises(self):
+    def test_extend_chain_on_expired_token_records_hop(self):
         key = _make_key()
-        m = HdpMiddleware(signing_key=key, principal_id="u@x.com", default_expires_in=-1)
+        m = HdpMiddleware(signing_key=key, principal_id="u@x.com")
         m.issue_token()
-        with pytest.raises(HdpTokenExpiredError):
-            m.extend_chain("agent-X")
+        m._current_token["header"]["issued_at"] = 0
+        m._current_token["header"]["expires_at"] = 1
+        m._current_token["signature"] = _sign_root(m._current_token, key, m.key_id)
+
+        result = m.extend_chain("agent-X")
+
+        token = json.loads(result["new_token"])
+        verification = m.verify_token(result["new_token"])
+        assert len(token["chain"]) == 1
+        assert token["chain"][0]["agent_id"] == "agent-X"
+        assert verification["valid"] is True
+        assert verification["recorded_after_period"] == [1]
+        assert issubclass(HdpTokenExpiredError, Exception)
 
     def test_extend_chain_return_value(self):
         m = self._make()
@@ -159,10 +171,19 @@ class TestMiddlewareVerifyToken:
         assert result["valid"] is False
 
     def test_verify_expired_token(self):
-        m = HdpMiddleware(signing_key=_make_key(), principal_id="u@x.com", default_expires_in=-1)
+        key = _make_key()
+        m = HdpMiddleware(signing_key=key, principal_id="u@x.com")
         r = m.issue_token()
-        result = m.verify_token(r["token"])
+
+        token = json.loads(r["token"])
+        token["header"]["issued_at"] = 0
+        token["header"]["expires_at"] = 1
+        token["signature"] = _sign_root(token, key, m.key_id)
+        result = m.verify_token(json.dumps(token))
+
+        assert result["valid"] is True
         assert result["expired"] is True
+        assert result["recorded_after_period"] == []
 
 
 class TestMiddlewareHandleToolCall:
