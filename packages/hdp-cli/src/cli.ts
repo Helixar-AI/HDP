@@ -8,7 +8,7 @@
  *
  * Exit codes:
  *   0 — token structure is schema-valid (note: signature cannot be verified without a public key)
- *   1 — token is invalid (schema violations, expiry, version, etc.)
+ *   1: token structure is invalid (schema violations, unsupported version, etc.)
  *   2 — usage error (bad arguments, unreadable file)
  */
 
@@ -56,15 +56,6 @@ function validateStructure(token: unknown): string[] {
     errors.push(`VERSION: unsupported hdp version '${t.hdp}' (expected '0.1')`)
   }
 
-  // Expiry check (structural only — no time source required)
-  if (typeof t.header === 'object' && t.header !== null) {
-    const header = t.header as Record<string, unknown>
-    if (typeof header.expires_at === 'number' && header.expires_at < Date.now()) {
-      const expired = new Date(header.expires_at as number).toISOString()
-      errors.push(`TOKEN_EXPIRED: token expired at ${expired}`)
-    }
-  }
-
   // Chain hop_signature presence
   if (Array.isArray(t.chain)) {
     for (const hop of t.chain as unknown[]) {
@@ -101,7 +92,7 @@ async function main() {
     process.exit(1)
   }
 
-  // Run structural checks (expiry, hop signatures, version)
+  // Run structural checks (hop signatures, version)
   const structuralErrors = validateStructure(parsed)
   if (structuralErrors.length > 0) {
     for (const err of structuralErrors) {
@@ -123,6 +114,17 @@ async function main() {
   console.log(`  intent:      ${scope.intent}`)
   console.log(`  chain hops:  ${chain.length}`)
   console.log(``)
+  if ((header.expires_at as number) <= Date.now()) {
+    console.log(`  Note: the record's authorization period has ended.`)
+  }
+  const recordedAfterPeriod = chain.some(hop => {
+    if (typeof hop !== 'object' || hop === null || Array.isArray(hop)) return false
+    const timestamp = (hop as Record<string, unknown>).timestamp
+    return typeof timestamp === 'number' && timestamp >= (header.expires_at as number)
+  })
+  if (recordedAfterPeriod) {
+    console.log(`  Note: one or more hops were recorded after the authorization period ended.`)
+  }
   console.log(`  Note: cryptographic signature not verified (requires public key).`)
   console.log(`  Use @helixar_ai/hdp for full verification including Ed25519 signature check.`)
 
