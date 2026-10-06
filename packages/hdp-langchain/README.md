@@ -98,10 +98,10 @@ print(result.valid, result.hop_count)  # True, 2
 
 | # | Consideration | How it's handled |
 |---|---|---|
-| **1** | **Scope enforcement** | Tool calls are checked against `authorized_tools` in `on_tool_start`. Default: logs + records violation in token. `strict=True`: raises `HDPScopeViolationError`. |
-| **2** | **Delegation depth** | `ScopePolicy(max_hops=N)` enforced per run; hops beyond the limit are skipped and logged. |
-| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each (~2.6 KB for a 10-hop run). All HDP operations are non-blocking — failures log as warnings, execution always continues. |
-| **4** | **Verification** | `verify_chain(token, public_key)` validates root + every hop signature offline. Returns `VerificationResult` with `valid`, `hop_count`, `violations`, and per-hop outcomes. |
+| **1** | **Scope observation** | Tool calls are compared with declared `authorized_tools`; out-of-scope attempts are recorded without gating the call. |
+| **2** | **Recording depth** | `ScopePolicy(max_hops=N)` caps the recorded chain. LangChain actions continue after the chain is full. |
+| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each (~2.6 KB for a 10-hop run). Recording failures are logged as warnings. |
+| **4** | **Verification** | `verify_chain(token, public_key)` checks record integrity offline. `valid` covers integrity only; `recorded_after_period` lists hop sequence numbers at or after `expires_at`. |
 | **5** | **Callback integration** | `get_callback_handler()` returns an `HdpCallbackHandler` compatible with LangChain's `RunnableConfig`. For LangGraph, use `hdp_node()` to wrap node functions. |
 
 ---
@@ -118,7 +118,7 @@ HdpMiddleware(
     scope: ScopePolicy,          # what is authorised
     key_id: str = "default",     # label stored in the token header
     expires_in_ms: int = 86400000,
-    strict: bool = False,        # True → raise on scope violations
+    strict: bool = False,        # Deprecated; True raises ValueError at construction
 )
 ```
 
@@ -156,7 +156,10 @@ result.valid        # bool
 result.hop_count    # int
 result.violations   # list[str]
 result.hop_results  # list[HopVerification]
+result.recorded_after_period  # list[int] of hop seq values at or after expires_at
 ```
+
+HDP tokens are records and cannot gate actions. `authorized_tools` records a declaration and does not authorize or block tool use. Expiry does not affect `valid`. The `strict` option remains for compatibility; setting it to `True` raises `ValueError` during construction. `HDPScopeViolationError` remains importable but is deprecated and never raised.
 
 ### `ScopePolicy`
 
@@ -174,29 +177,9 @@ ScopePolicy(
 
 ---
 
-## Error handling
+## Record-only behavior
 
-By default, HDP middleware is **non-blocking** — signing or scope-check failures are logged as warnings and execution continues normally. Violations are recorded in the token for post-hoc audit.
-
-```python
-# Default (non-blocking): violations are logged, execution keeps running
-middleware = HdpMiddleware(
-    signing_key=key, session_id="s1",
-    principal=HdpPrincipal(id="alice", id_type="handle"),
-    scope=ScopePolicy(intent="research", authorized_tools=["web_search"]),
-)
-handler = middleware.get_callback_handler()
-# If the agent calls an unauthorised tool (e.g. "execute_code"):
-# → WARNING is logged, violation attached to the token
-# → execution is NOT interrupted
-
-# Strict mode: violations raise immediately
-middleware_strict = HdpMiddleware(
-    ...,
-    strict=True,
-)
-# If the agent calls "execute_code" → raises HDPScopeViolationError
-```
+Out-of-scope tool calls are recorded in the signed chain and LangChain callbacks do not gate tool execution. `strict=True` is retained for compatibility and raises `ValueError` during construction. The deprecated `HDPScopeViolationError` remains importable but is never raised.
 
 ---
 

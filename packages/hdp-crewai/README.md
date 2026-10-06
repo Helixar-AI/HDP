@@ -53,10 +53,10 @@ print(result.valid, result.hop_count, result.violations)
 
 | # | Consideration | How it's handled |
 |---|---|---|
-| **1** | **Scope enforcement** | `step_callback` checks every `AgentAction.tool` against `authorized_tools`. Default: logs + records violation in token. `strict=True`: raises `HDPScopeViolationError`. |
-| **2** | **Delegation depth** | `ScopePolicy(max_hops=N)` enforced per crew run; hops beyond the limit are skipped and logged. |
-| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each (~2.6 KB for a 10-hop crew). All HDP operations are non-blocking — failures log as warnings, the crew always continues. |
-| **4** | **Verification** | `verify_chain(token, public_key)` validates root + every hop signature offline. Returns `VerificationResult` with `valid`, `hop_count`, `violations`, and per-hop outcomes. |
+| **1** | **Scope observation** | `step_callback` compares each `AgentAction.tool` with the declared `authorized_tools` and records out-of-scope attempts. It does not gate tools. |
+| **2** | **Recording depth** | `ScopePolicy(max_hops=N)` caps the recorded chain. CrewAI actions continue after the chain is full. |
+| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each (~2.6 KB for a 10-hop crew). Recording failures are logged as warnings. |
+| **4** | **Verification** | `verify_chain(token, public_key)` checks record integrity offline. `valid` covers integrity only; `recorded_after_period` lists hop sequence numbers at or after `expires_at`. |
 | **5** | **Memory integration** | `after_kickoff` persists the signed token JSON to CrewAI's storage directory (`db_storage_path()`) alongside task outputs for retroactive auditing. |
 
 ---
@@ -73,7 +73,7 @@ HdpMiddleware(
     scope: ScopePolicy,          # what is authorised
     key_id: str = "default",     # label stored in the token header
     expires_in_ms: int = 86400000,
-    strict: bool = False,        # True → raise on scope violations
+    strict: bool = False,        # Deprecated; True raises ValueError at construction
     persist_token: bool = True,  # False → skip storage write
 )
 ```
@@ -92,7 +92,10 @@ result.valid        # bool
 result.hop_count    # int
 result.violations   # list[str]
 result.hop_results  # list[HopVerification]
+result.recorded_after_period  # list[int] of hop seq values at or after expires_at
 ```
+
+HDP tokens are records and cannot gate actions. `authorized_tools` records a declaration and does not authorize or block tool use. Expiry does not affect `valid`. The `strict` option remains for compatibility; setting it to `True` raises `ValueError` during construction. `HDPScopeViolationError` remains importable but is deprecated and never raised.
 
 ### `ScopePolicy`
 

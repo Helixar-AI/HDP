@@ -8,4 +8,6 @@ pip install hdp-llamaindex
 
 This installs `llama-index-callbacks-hdp` and re-exports all classes from the `hdp_llamaindex` namespace.
 
+HDP tokens are records and cannot gate actions. `verify_chain` exposes `recorded_after_period` separately from its integrity result. The compatibility options `strict=True` and `on_violation="raise"` raise `ValueError` during construction.
+
 For full documentation see [llama-index-callbacks-hdp](../llama-index-callbacks-hdp/README.md).

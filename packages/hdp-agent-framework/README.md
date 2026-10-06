@@ -57,10 +57,10 @@ print(result.hop_count)   # number of agent turns recorded
 
 | # | Consideration | How it's handled |
 |---|---|---|
-| **1** | **Scope enforcement** | Tool calls are inspected against `authorized_tools`. Default: logs + records violation in token. `strict=True`: raises `HDPScopeViolationError`. |
-| **2** | **Delegation depth** | `ScopePolicy(max_hops=N)` is enforced; hops beyond the limit are skipped and logged. |
-| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each. All HDP operations are non-blocking — failures log as warnings, the agent always continues. |
-| **4** | **Verification** | `verify_chain(token, public_key)` validates root + every hop offline. Returns `VerificationResult` with `valid`, `hop_count`, `violations`, and per-hop outcomes. |
+| **1** | **Scope observation** | Tool calls are compared with declared `authorized_tools`; out-of-scope attempts are recorded without gating the call. |
+| **2** | **Recording depth** | `ScopePolicy(max_hops=N)` caps the recorded chain. Agent-framework actions continue after the chain is full. |
+| **3** | **Token size / performance** | Ed25519 signatures are 64 bytes each. Recording failures are logged as warnings. |
+| **4** | **Verification** | `verify_chain(token, public_key)` checks record integrity offline. `valid` covers integrity only; `recorded_after_period` lists hop sequence numbers at or after `expires_at`. |
 | **5** | **Agent integration** | `configure()` appends `HdpMiddleware` (chat middleware) and `_function_middleware` (tool middleware) to `agent.middleware`. Works with a single Agent or a list. |
 
 ---
@@ -77,7 +77,7 @@ HdpMiddleware(
     scope: ScopePolicy,           # what is authorised
     key_id: str = "default",      # label stored in the token header
     expires_in_ms: int = 86400000,
-    strict: bool = False,         # True → raise on scope violations
+    strict: bool = False,         # Deprecated; True raises ValueError at construction
 )
 ```
 
@@ -95,7 +95,10 @@ result.valid        # bool
 result.hop_count    # int
 result.violations   # list[str]
 result.hop_results  # list[HopVerification]
+result.recorded_after_period  # list[int] of hop seq values at or after expires_at
 ```
+
+HDP tokens are records and cannot gate actions. `authorized_tools` records a declaration and does not authorize or block tool use. Expiry does not affect `valid`. The `strict` option remains for compatibility; setting it to `True` raises `ValueError` during construction. `HDPScopeViolationError` remains importable but is deprecated and never raised.
 
 ### `ScopePolicy`
 
@@ -113,30 +116,11 @@ ScopePolicy(
 
 ---
 
-## Error handling
+## Record-only behavior
 
-By default, HDP middleware is **non-blocking** — violations are logged as warnings and
-recorded in the token for post-hoc audit. The agent always continues.
+Out-of-scope tool calls are recorded in the signed chain and `call_next()` runs for every call. `strict=True` is retained for compatibility and raises `ValueError` during construction. The deprecated `HDPScopeViolationError` remains importable but is never raised.
 
-```python
-# Default (non-blocking): violations recorded, agent keeps running
-middleware = HdpMiddleware(
-    signing_key=key, session_id="s1",
-    principal=HdpPrincipal(id="alice", id_type="handle"),
-    scope=ScopePolicy(intent="research", authorized_tools=["web_search"]),
-)
-middleware.configure(agent)
-
-# Strict mode: violations raise immediately
-middleware_strict = HdpMiddleware(
-    signing_key=key, session_id="s1",
-    principal=HdpPrincipal(id="alice", id_type="handle"),
-    scope=ScopePolicy(intent="research", authorized_tools=["web_search"]),
-    strict=True,
-)
-```
-
-After a session, inspect violations:
+After a session, inspect recorded violations:
 
 ```python
 token = middleware.export_token()
@@ -150,13 +134,12 @@ for v in token["scope"].get("extensions", {}).get("scope_violations", []):
 
 ### Session ID uniqueness
 
-Use a unique `session_id` per delegation session — for example, a UUID generated at
+Use a unique `session_id` per delegation session, for example a UUID generated at
 session start. Each token embeds the session ID in the root signature. If two sessions
 share the same ID:
 
 - Cryptographic security is unaffected (each token has its own independent chain)
-- Auditability breaks: logs indexed by session ID become ambiguous, and replay
-  detection based on session ID is defeated
+- Audit correlation becomes ambiguous in logs indexed by session ID.
 
 ```python
 import uuid
