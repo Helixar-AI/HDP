@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -153,3 +154,42 @@ class TestVerifyChain:
             token = _add_hop(token, key, f"hop {i}")
         result = verify_chain(token, pub.public_bytes_raw())
         assert result.depth == 3
+
+
+class TestSerializedInputValidation:
+    def test_duplicate_member_string_fails_step_zero_and_clean_string_verifies(self):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        clean_json = json.dumps(token)
+
+        clean_result = verify_chain(clean_json, pub.public_bytes_raw())
+        duplicate_json = clean_json[:-1] + ',"hdp":"0.1"}'
+        duplicate_result = verify_chain(duplicate_json, pub.public_bytes_raw())
+
+        assert clean_result.valid is True
+        assert duplicate_result.valid is False
+        assert duplicate_result.violations == [
+            "Step 0: Input validation failed: duplicate JSON object member 'hdp'"
+        ]
+
+    @pytest.mark.parametrize(
+        "update,expected_error",
+        [
+            ({"principal": {"metadata": {"value": 9007199254740993}}, "scope": {}},
+             "token.principal.metadata.value integer must be exactly representable"),
+            ({"principal": {}, "scope": {"max_hops": None}},
+             "scope.max_hops must be a positive integer"),
+        ],
+    )
+    def test_section_three_invalid_dict_fails_step_zero(self, update, expected_error):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        token["principal"].update(update["principal"])
+        token["scope"].update(update["scope"])
+
+        result = verify_chain(token, pub.public_bytes_raw())
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert result.violations[0].startswith("Step 0: Input validation failed: ")
+        assert expected_error in result.violations[0]

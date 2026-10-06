@@ -70,7 +70,28 @@ class TestRootTokenIssuance:
     def test_export_token_matches_context(self):
         handler, _, _ = _make_handler()
         handler.start_trace("s2")
-        assert handler.export_token() is get_token()
+        exported = handler.export_token()
+        internal = get_token()
+        assert exported == internal
+        assert exported is not internal
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+        assert get_token()["header"]["session_id"] == "s2"
+        assert get_token()["signature"]["value"] != "corrupted"
+
+    @pytest.mark.parametrize("expires_in_ms", [0, -1])
+    def test_root_issuance_rejects_nonpositive_ttl(self, expires_in_ms):
+        handler, _, _ = _make_handler(expires_in_ms=expires_in_ms)
+
+        with pytest.raises(ValueError, match="expires_at must be greater"):
+            handler.start_trace("invalid-ttl")
+
+    def test_root_issuance_rejects_invalid_max_hops(self):
+        handler, _, _ = _make_handler(scope=ScopePolicy(intent="x", max_hops=0))
+
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            handler.start_trace("invalid-max-hops")
 
 
 class TestEndTrace:
@@ -115,6 +136,26 @@ class TestToolCallHandling:
         self._tool_start(handler, "web_search")
         result = verify_chain(get_token(), pub.public_bytes_raw())
         assert result.valid
+
+    def test_signing_failure_keeps_out_of_scope_event_result(self, monkeypatch, caplog):
+        handler, _, _ = _make_handler(
+            scope=ScopePolicy(intent="private intent", authorized_tools=["allowed"])
+        )
+        handler.start_trace("signing-failure")
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr("llama_index.callbacks.hdp.callbacks.sign_hop", fail_signing)
+        event_id = handler.on_event_start(
+            CBEventType.FUNCTION_CALL,
+            payload={EventPayload.TOOL: FakeTool("forbidden")},
+            event_id="preserved-event",
+        )
+
+        assert event_id == "preserved-event"
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
 
     def test_multiple_tool_calls_build_chain(self):
         handler, _, pub = _make_handler()
@@ -209,6 +250,38 @@ class TestScopeEnforcement:
                 scope=ScopePolicy(intent="x"),
                 on_violation="raise",
             )
+
+    @pytest.mark.parametrize("expires_in_ms", [0, -1])
+    def test_instrumentation_rejects_nonpositive_ttl_at_construction(self, expires_in_ms):
+        key, _ = _generate_key()
+        with pytest.raises(ValueError, match="expires_at must be greater"):
+            HdpInstrumentationHandler.init(
+                signing_key=key,
+                principal=HdpPrincipal(id="user@test.com", id_type="email"),
+                scope=ScopePolicy(intent="x"),
+                expires_in_ms=expires_in_ms,
+            )
+
+    def test_instrumentation_rejects_invalid_max_hops_at_construction(self):
+        key, _ = _generate_key()
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            HdpInstrumentationHandler.init(
+                signing_key=key,
+                principal=HdpPrincipal(id="user@test.com", id_type="email"),
+                scope=ScopePolicy(intent="x", max_hops=0),
+            )
+
+    def test_instrumentation_export_is_a_defensive_deep_copy(self):
+        handler, _, _ = _make_handler()
+        handler.start_trace("instrumentation-export")
+        instrument_handler = object.__new__(HdpInstrumentationHandler)
+        exported = instrument_handler.export_token()
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert get_token()["header"]["session_id"] == "instrumentation-export"
+        assert get_token()["signature"]["value"] != "corrupted"
 
 
 class TestNonBlocking:

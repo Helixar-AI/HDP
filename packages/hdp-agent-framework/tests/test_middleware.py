@@ -265,6 +265,77 @@ class TestFunctionMiddlewareScopeEnforcement:
         assert len(mw.export_token()["chain"]) == 1
 
 
+class TestRecordAppendIsolation:
+    @pytest.mark.asyncio
+    async def test_signing_failure_does_not_abort_out_of_scope_tool_action(self, monkeypatch, caplog):
+        mw, _, _ = _make_middleware(
+            scope=ScopePolicy(intent="private intent", authorized_tools=["allowed"])
+        )
+        await _process(mw)
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr("hdp_agent_framework.middleware.sign_hop", fail_signing)
+        executed = []
+        call_next = AsyncMock(side_effect=lambda: executed.append("tool executed"))
+
+        returned_call = await _function_middleware_call(mw, "forbidden", call_next)
+
+        assert returned_call is call_next
+        assert executed == ["tool executed"]
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_export_token_is_a_defensive_deep_copy(self):
+        mw, _, _ = _make_middleware()
+        await _process(mw)
+        exported = mw.export_token()
+        original_session = mw._token["header"]["session_id"]
+        original_signature = mw._token["signature"]["value"]
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert mw._token["header"]["session_id"] == original_session
+        assert mw._token["signature"]["value"] == original_signature
+
+
+class TestIssuanceValidation:
+    @pytest.mark.parametrize("expires_in_ms", [0, -1])
+    def test_root_issuance_rejects_nonpositive_ttl(self, expires_in_ms):
+        mw, _, _ = _make_middleware(expires_in_ms=expires_in_ms)
+
+        with pytest.raises(ValueError, match="expires_at must be greater"):
+            mw._issue_root_token()
+
+    def test_root_issuance_rejects_invalid_max_hops(self):
+        mw, _, _ = _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
+
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            mw._issue_root_token()
+
+    @pytest.mark.asyncio
+    async def test_invalid_internal_record_is_rejected_before_signing(self, monkeypatch, caplog):
+        mw, _, _ = _make_middleware()
+        await _process(mw)
+        original_chain = list(mw._token["chain"])
+        mw._token["scope"]["max_hops"] = None
+        signer_called = []
+
+        def unexpected_signing(*args, **kwargs):
+            signer_called.append(True)
+            raise AssertionError("invalid record reached signer")
+
+        monkeypatch.setattr("hdp_agent_framework.middleware.sign_hop", unexpected_signing)
+        mw._extend_chain("agent")
+
+        assert mw._token["chain"] == original_chain
+        assert signer_called == []
+        assert "HDP audit record append failed" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # export_token_json()
 # ---------------------------------------------------------------------------

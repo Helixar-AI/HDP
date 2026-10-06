@@ -10,6 +10,7 @@ Most tests here can pass before Task 4 is complete.
 from __future__ import annotations
 
 import time
+import json
 import uuid
 
 import pytest
@@ -233,8 +234,12 @@ class TestExpiredToken:
         token["hdp"] = "0.2"
         token["chain"][0]["agent_type"] = 123
 
-        with pytest.raises(ValueError, match=r"chain\[0\]\.agent_type must be a string"):
-            verify_chain(token, pub)
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert result.violations == [
+            "Step 0: Input validation failed: chain[0].agent_type must be a string"
+        ]
 
     def test_structure_failure_stops_before_hop_signatures(self):
         priv, pub = _generate_key()
@@ -277,6 +282,45 @@ class TestRawPublicKeyBytes:
         raw_bytes = pub.public_bytes_raw()
         result = verify_chain(token, raw_bytes)
         assert result.valid
+
+
+class TestSerializedInputValidation:
+    def test_duplicate_member_string_fails_step_zero_and_clean_string_verifies(self):
+        priv, pub = _generate_key()
+        token = _build_root_token(priv)
+        clean_json = json.dumps(token)
+
+        clean_result = verify_chain(clean_json, pub)
+        duplicate_json = clean_json[:-1] + ',"hdp":"0.1"}'
+        duplicate_result = verify_chain(duplicate_json, pub)
+
+        assert clean_result.valid is True
+        assert duplicate_result.valid is False
+        assert duplicate_result.violations == [
+            "Step 0: Input validation failed: duplicate JSON object member 'hdp'"
+        ]
+
+    @pytest.mark.parametrize(
+        "invalid_value,expected_error",
+        [
+            (9007199254740993, "token.principal.metadata.value integer must be exactly representable"),
+            (None, "scope.max_hops must be a positive integer"),
+        ],
+    )
+    def test_section_three_invalid_dict_fails_step_zero(self, invalid_value, expected_error):
+        priv, pub = _generate_key()
+        token = _build_root_token(priv)
+        if invalid_value is None:
+            token["scope"]["max_hops"] = invalid_value
+        else:
+            token["principal"]["metadata"] = {"value": invalid_value}
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert result.violations[0].startswith("Step 0: Input validation failed: ")
+        assert expected_error in result.violations[0]
 
     def test_verify_raw_bytes_catches_wrong_key(self):
         priv, _ = _generate_key()

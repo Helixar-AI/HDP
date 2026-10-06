@@ -131,6 +131,53 @@ class TestDataClassificationEnforcement:
         )
         assert token["chain"][0]["hop_signature"]
 
+    def test_signing_failure_keeps_classified_nodes(self, monkeypatch, caplog):
+        key, _ = _generate_key()
+        _issue_token(key, ScopePolicy(intent="private intent", data_classification="internal"))
+        pp = HdpNodePostprocessor(signing_key=key, check_data_classification=True)
+        nodes = _make_nodes("restricted")
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr(
+            "llama_index.callbacks.hdp.postprocessor.sign_hop", fail_signing
+        )
+
+        result = pp._postprocess_nodes(nodes)
+
+        assert result is nodes
+        assert len(result) == 1
+        assert result[0].node.metadata["classification"] == "restricted"
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
+
+    def test_invalid_internal_record_keeps_classified_nodes_without_signing(self, monkeypatch, caplog):
+        key, _ = _generate_key()
+        _issue_token(key, ScopePolicy(intent="private intent", data_classification="internal"))
+        token = get_token()
+        token["scope"]["max_hops"] = None
+        set_token(token)
+        pp = HdpNodePostprocessor(signing_key=key, check_data_classification=True)
+        nodes = _make_nodes("restricted")
+        signer_called = []
+
+        def unexpected_signing(*args, **kwargs):
+            signer_called.append(True)
+            raise AssertionError("invalid record reached signer")
+
+        monkeypatch.setattr(
+            "llama_index.callbacks.hdp.postprocessor.sign_hop", unexpected_signing
+        )
+
+        result = pp._postprocess_nodes(nodes)
+
+        assert result is nodes
+        assert result[0].node.metadata["classification"] == "restricted"
+        assert get_token()["chain"] == []
+        assert signer_called == []
+        assert "HDP audit record append failed" in caplog.text
+
     def test_strict_mode_is_rejected_at_construction(self):
         key, _ = _generate_key()
         assert issubclass(HDPScopeViolationError, Exception)

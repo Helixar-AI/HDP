@@ -15,7 +15,15 @@ class TestSessionBasics:
     def test_set_and_get_token(self):
         token = {"hdp": "0.1", "header": {"token_id": "abc"}}
         set_token(token)
-        assert get_token() is token
+        assert get_token() == token
+        assert get_token() is not token
+
+        token["header"]["token_id"] = "changed caller copy"
+        assert get_token()["header"]["token_id"] == "abc"
+
+        exported = get_token()
+        exported["header"]["token_id"] = "changed exported copy"
+        assert get_token()["header"]["token_id"] == "abc"
         clear_token()
 
     def test_clear_token(self):

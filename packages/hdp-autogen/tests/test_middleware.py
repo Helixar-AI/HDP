@@ -314,6 +314,7 @@ class TestVerification:
         token["header"]["issued_at"] = 0
         token["header"]["expires_at"] = 1
         token["signature"] = sign_root(token, mw._signing_key, mw._key_id)
+        mw._token = token
         mw.on_message_send(FakeAgent("A"), "after expiry", None)
 
         result = verify_chain(mw.export_token(), pub)
@@ -452,3 +453,107 @@ class TestMessageExtraction:
         mw.on_message_send(FakeAgent("A"), long_msg, None)
         hop = mw.export_token()["chain"][0]
         assert len(hop["action_summary"]) == 200
+
+
+class TestSerializedInputValidation:
+    def test_duplicate_member_string_fails_step_zero_and_clean_string_verifies(self):
+        mw, pub = _make_middleware()
+        mw.before_kickoff()
+        clean_json = json.dumps(mw.export_token())
+
+        clean_result = verify_chain(clean_json, pub)
+        duplicate_json = clean_json[:-1] + ',"hdp":"0.1"}'
+        duplicate_result = verify_chain(duplicate_json, pub)
+
+        assert clean_result.valid is True
+        assert duplicate_result.valid is False
+        assert duplicate_result.violations == [
+            "Step 0: Input validation failed: duplicate JSON object member 'hdp'"
+        ]
+
+    @pytest.mark.parametrize(
+        "update,expected_error",
+        [
+            ({"principal": {"metadata": {"value": 9007199254740993}}, "scope": {}},
+             "token.principal.metadata.value integer must be exactly representable"),
+            ({"principal": {}, "scope": {"max_hops": None}},
+             "scope.max_hops must be a positive integer"),
+        ],
+    )
+    def test_section_three_invalid_dict_fails_step_zero(self, update, expected_error):
+        mw, pub = _make_middleware()
+        mw.before_kickoff()
+        token = mw.export_token()
+        token["principal"].update(update["principal"])
+        token["scope"].update(update["scope"])
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert result.violations[0].startswith("Step 0: Input validation failed: ")
+        assert expected_error in result.violations[0]
+
+
+class TestRecordAppendIsolation:
+    def test_signing_failure_preserves_message_return(self, monkeypatch, caplog):
+        mw, _ = _make_middleware(
+            scope=ScopePolicy(intent="private intent", authorized_tools=["allowed"])
+        )
+        mw.before_kickoff()
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr("hdp_autogen.middleware.sign_hop", fail_signing)
+        message = {"content": "continue", "tool_calls": [{"function": {"name": "forbidden"}}]}
+        returned = mw.on_message_receive(None, message, None)
+
+        assert returned is message
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
+
+    def test_export_token_is_a_defensive_deep_copy(self):
+        mw, _ = _make_middleware()
+        mw.before_kickoff()
+        original_session = mw._token["header"]["session_id"]
+        original_signature = mw._token["signature"]["value"]
+        exported = mw.export_token()
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert mw._token["header"]["session_id"] == original_session
+        assert mw._token["signature"]["value"] == original_signature
+
+
+class TestIssuanceValidation:
+    @pytest.mark.parametrize("expires_in_ms", [0, -1])
+    def test_root_issuance_rejects_nonpositive_ttl(self, expires_in_ms):
+        mw, _ = _make_middleware(expires_in_ms=expires_in_ms)
+
+        with pytest.raises(ValueError, match="expires_at must be greater"):
+            mw.before_kickoff()
+
+    def test_root_issuance_rejects_invalid_max_hops(self):
+        mw, _ = _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
+
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            mw.before_kickoff()
+
+    def test_invalid_internal_record_is_rejected_before_signing(self, monkeypatch, caplog):
+        mw, _ = _make_middleware()
+        mw.before_kickoff()
+        mw._token["scope"]["max_hops"] = None
+        signer_called = []
+
+        def unexpected_signing(*args, **kwargs):
+            signer_called.append(True)
+            raise AssertionError("invalid record reached signer")
+
+        monkeypatch.setattr("hdp_autogen.middleware.sign_hop", unexpected_signing)
+        mw._extend_chain("agent", "summary")
+
+        assert mw._token["chain"] == []
+        assert signer_called == []
+        assert "HDP audit record append failed" in caplog.text

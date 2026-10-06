@@ -248,6 +248,19 @@ class TestMiddlewareInspection:
         assert isinstance(token, dict)
         assert "signature" in token
 
+    def test_export_current_token_is_a_defensive_deep_copy(self):
+        m = HdpMiddleware(signing_key=_make_key(), principal_id="u@x.com")
+        m.issue_token()
+        original_session = m._current_token["header"]["session_id"]
+        original_signature = m._current_token["signature"]["value"]
+        exported = m.export_current_token()
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert m._current_token["header"]["session_id"] == original_session
+        assert m._current_token["signature"]["value"] == original_signature
+
     def test_repr_before_issue(self):
         m = HdpMiddleware(signing_key=_make_key(), principal_id="u@x.com", session_id="s1")
         assert "s1" in repr(m)
