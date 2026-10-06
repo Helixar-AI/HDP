@@ -194,18 +194,76 @@ class TestEmptyChain:
 # ---------------------------------------------------------------------------
 
 class TestExpiredToken:
-    def test_expired_token_has_violation(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         priv, pub = _generate_key()
-        # expires_at 1 second in the past
-        token = _build_root_token(priv, expires_offset_ms=-1000)
-        result = verify_chain(token, pub)
-        assert any("expired" in v.lower() for v in result.violations)
+        token = _build_root_token(priv)
+        token["header"]["issued_at"] = 100
+        token["header"]["expires_at"] = 200
+        token["signature"] = sign_root(token, priv, "default")
+        unsigned_hop = {
+            "seq": 1,
+            "agent_id": "after-period-agent",
+            "agent_type": "custom-role",
+            "timestamp": 200,
+            "action_summary": "record at expiry boundary",
+            "parent_hop": 0,
+        }
+        signature = sign_hop([unsigned_hop], token["signature"]["value"], priv)
+        token["chain"] = [{**unsigned_hop, "hop_signature": signature}]
 
-    def test_expired_token_valid_flag_is_false(self):
+        result = verify_chain(token, pub)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
+
+    def test_version_failure_precedes_root_signature_failure(self):
         priv, pub = _generate_key()
-        token = _build_root_token(priv, expires_offset_ms=-1000)
+        token = _build_root_token(priv)
+        token["hdp"] = "0.2"
+        token["signature"]["value"] = "invalid"
+
         result = verify_chain(token, pub)
         assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 1" in result.violations[0]
+
+    def test_input_validation_precedes_version_check(self):
+        priv, pub = _generate_key()
+        token = _append_hop(_build_root_token(priv), priv, "agent-one")
+        token["hdp"] = "0.2"
+        token["chain"][0]["agent_type"] = 123
+
+        with pytest.raises(ValueError, match=r"chain\[0\]\.agent_type must be a string"):
+            verify_chain(token, pub)
+
+    def test_structure_failure_stops_before_hop_signatures(self):
+        priv, pub = _generate_key()
+        token = _build_root_token(priv)
+        token = _append_hop(token, priv, "agent-one")
+        token["chain"][0]["seq"] = 2
+        token["chain"][0]["hop_signature"] = "invalid"
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 3" in result.violations[0]
+        assert result.hop_results == []
+
+    def test_recorded_depth_failure_is_step_five(self):
+        priv, pub = _generate_key()
+        token = _build_root_token(priv)
+        token["scope"]["max_hops"] = 1
+        token["signature"] = sign_root(token, priv, "default")
+        token = _append_hop(token, priv, "agent-one")
+        token = _append_hop(token, priv, "agent-two")
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 5" in result.violations[0]
+        assert len(result.hop_results) == 2
 
 
 # ---------------------------------------------------------------------------

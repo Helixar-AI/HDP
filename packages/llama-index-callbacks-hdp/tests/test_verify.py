@@ -18,6 +18,7 @@ def _generate_key():
 def _issue_token(key: bytes, pub_key=None, session_id="s1", expired=False, max_hops=None) -> dict:
     import uuid
     now = int(time.time() * 1000)
+    issued_at = now - 2000 if expired else now
     expires_at = now - 1000 if expired else now + 86400000
     scope: dict = {"intent": "test", "data_classification": "internal", "network_egress": True, "persistence": False}
     if max_hops is not None:
@@ -26,7 +27,7 @@ def _issue_token(key: bytes, pub_key=None, session_id="s1", expired=False, max_h
         "hdp": "0.1",
         "header": {
             "token_id": str(uuid.uuid4()),
-            "issued_at": now,
+            "issued_at": issued_at,
             "expires_at": expires_at,
             "session_id": session_id,
             "version": "0.1",
@@ -102,11 +103,26 @@ class TestVerifyChain:
         result = verify_chain(token, other_pub.public_bytes_raw())
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         key, pub = _generate_key()
         token = _issue_token(key, expired=True)
+        token = _add_hop(token, key, "record at expiry")
         result = verify_chain(token, pub.public_bytes_raw())
-        assert any("expired" in v.lower() for v in result.violations)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
+
+    def test_version_failure_precedes_root_signature_failure(self):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        token["hdp"] = "0.2"
+        token["signature"]["value"] = "invalid"
+
+        result = verify_chain(token, pub.public_bytes_raw())
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 1" in result.violations[0]
 
     def test_max_hops_exceeded_flagged(self):
         key, pub = _generate_key()
@@ -116,6 +132,9 @@ class TestVerifyChain:
         token = _add_hop(token, key, "hop 2")
         result = verify_chain(token, pub.public_bytes_raw())
         assert any("max_hops" in v for v in result.violations)
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 5" in result.violations[0]
 
     def test_hop_results_detail(self):
         key, pub = _generate_key()
