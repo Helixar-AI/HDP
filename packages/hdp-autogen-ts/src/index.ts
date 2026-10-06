@@ -202,11 +202,10 @@ export class HdpAgentWrapper {
     if (authorized === undefined) return
 
     if (!authorized.includes(tool)) {
-      try {
-        this.onScopeViolation?.({ tool, authorizedTools: [...authorized] })
-      } catch (error) {
-        console.error('HDP scope violation callback failed:', error)
-      }
+      notifyCallbackResult('onScopeViolation', this.onScopeViolation, {
+        tool,
+        authorizedTools: [...authorized],
+      })
     }
   }
 
@@ -242,8 +241,8 @@ export function hdpMiddleware(
   return async (message: AutoGenMessage): Promise<AutoGenMessage> => {
     const tokenHeader = readTokenHeader(message.headers)
 
-    if (!tokenHeader) {
-      notifyCallback(onMissing)
+    if (tokenHeader === undefined) {
+      notifyCallback('onMissing', onMissing)
       return handler(message)
     }
 
@@ -251,37 +250,59 @@ export function hdpMiddleware(
     try {
       token = decodeHeader(tokenHeader)
     } catch (err) {
-      notifyCallbackResult(onInvalid, invalidInputResult(err))
+      notifyCallbackResult('onInvalid', onInvalid, invalidInputResult(err))
       return handler(message)
     }
 
     if (verify) {
       const result = await verifyToken(token, verify)
       if (!result.valid) {
-        notifyCallbackResult(onInvalid, result)
+        notifyCallbackResult('onInvalid', onInvalid, result)
         return handler(message)
       }
     }
 
-    notifyCallbackResult(onValid, token)
+    notifyCallbackResult('onValid', onValid, token)
     return handler(message)
   }
 }
 
-function notifyCallback(callback: (() => void) | undefined): void {
+function notifyCallback(callbackName: string, callback: (() => void) | undefined): void {
+  if (!callback) return
+
   try {
-    callback?.()
-  } catch (error) {
-    console.error('HDP middleware callback failed:', error)
+    observeCallbackResult(callbackName, callback())
+  } catch {
+    logCallbackFailure(callbackName)
   }
 }
 
-function notifyCallbackResult<T>(callback: ((value: T) => void) | undefined, value: T): void {
+function notifyCallbackResult<T>(
+  callbackName: string,
+  callback: ((value: T) => void) | undefined,
+  value: T,
+): void {
+  if (!callback) return
+
   try {
-    callback?.(value)
-  } catch (error) {
-    console.error('HDP middleware callback failed:', error)
+    observeCallbackResult(callbackName, callback(value))
+  } catch {
+    logCallbackFailure(callbackName)
   }
+}
+
+function observeCallbackResult(callbackName: string, result: unknown): void {
+  if (
+    result !== null
+    && (typeof result === 'object' || typeof result === 'function')
+    && typeof (result as { then?: unknown }).then === 'function'
+  ) {
+    void Promise.resolve(result).catch(() => logCallbackFailure(callbackName))
+  }
+}
+
+function logCallbackFailure(callbackName: string): void {
+  console.error(`HDP callback failed: ${callbackName}`)
 }
 
 function invalidInputResult(error: unknown): VerificationResult {

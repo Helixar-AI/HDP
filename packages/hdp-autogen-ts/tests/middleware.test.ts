@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { HdpAgentWrapper, hdpMiddleware, HDP_TOOLS, getHdpTools } from '../src/index.js'
+import { HdpAgentWrapper, hdpMiddleware, HDP_TOOLS, getHdpTools, type AutoGenMessage } from '../src/index.js'
 import { generateKeyPair, issueToken, extendChain, verifyToken, encodeHeader } from '@helixar_ai/hdp'
 
 async function makeWrapper(overrides: Record<string, unknown> = {}) {
@@ -117,6 +117,81 @@ describe('HdpAgentWrapper', () => {
     })
     expect(result).toBe('tool ran')
     expect(tool).toHaveBeenCalledOnce()
+  })
+
+  it('handles rejected scope callbacks without unhandled rejections', async () => {
+    const unhandledReasons: unknown[] = []
+    const onUnhandledRejection = (reason: unknown) => unhandledReasons.push(reason)
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.on('unhandledRejection', onUnhandledRejection)
+
+    try {
+      let scopeViolationCalls = 0
+      const onScopeViolation = () => {
+        scopeViolationCalls++
+        return Promise.reject(new Error('scope callback detail'))
+      }
+      const wrapper = new HdpAgentWrapper({
+        signingKey: new Uint8Array(32),
+        sessionId: 's',
+        principal: { id: 'u', id_type: 'opaque' },
+        scope: { intent: 'x', authorized_tools: ['web_search'] },
+        onScopeViolation,
+      })
+      const tool = vi.fn().mockReturnValue('scope tool ran')
+
+      wrapper.onToolCall('browser_tool')
+      expect(tool()).toBe('scope tool ran')
+
+      const handler = vi.fn(async (message: AutoGenMessage) => ({ content: message.name }))
+      let missingCalls = 0
+      let invalidCalls = 0
+      let validCalls = 0
+      const onMissing = () => {
+        missingCalls++
+        return Promise.reject(new Error('missing callback detail'))
+      }
+      const onInvalid = () => {
+        invalidCalls++
+        return Promise.reject(new Error('invalid callback detail'))
+      }
+      const onValid = () => {
+        validCalls++
+        return Promise.reject(new Error('valid callback detail'))
+      }
+
+      const missingWrapped = hdpMiddleware(handler, { onMissing })
+      expect(await missingWrapped({ name: 'missing' })).toEqual({ content: 'missing' })
+
+      const invalidWrapped = hdpMiddleware(handler, { onInvalid })
+      expect(await invalidWrapped({ headers: { 'HDP-Token': 'not-base64url' }, name: 'invalid' }))
+        .toEqual({ content: 'invalid' })
+
+      const { token, publicKey } = await makeToken()
+      const validWrapped = hdpMiddleware(handler, { verify: { publicKey }, onValid })
+      expect(await validWrapped({ headers: { 'HDP-Token': encodeHeader(token) }, name: 'valid' }))
+        .toEqual({ content: 'valid' })
+
+      await new Promise<void>(resolve => setImmediate(resolve))
+
+      expect(unhandledReasons).toEqual([])
+      expect(scopeViolationCalls).toBe(1)
+      expect(missingCalls).toBe(1)
+      expect(invalidCalls).toBe(1)
+      expect(validCalls).toBe(1)
+      expect(tool).toHaveBeenCalledOnce()
+      expect(handler).toHaveBeenCalledTimes(3)
+      expect(logError.mock.calls).toEqual(expect.arrayContaining([
+        ['HDP callback failed: onScopeViolation'],
+        ['HDP callback failed: onMissing'],
+        ['HDP callback failed: onInvalid'],
+        ['HDP callback failed: onValid'],
+      ]))
+      expect(logError).toHaveBeenCalledTimes(4)
+    } finally {
+      process.off('unhandledRejection', onUnhandledRejection)
+      logError.mockRestore()
+    }
   })
 
   it('allows all tools when authorized_tools is undefined', () => {
@@ -244,12 +319,36 @@ describe('hdpMiddleware', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it.each(['', '   '])('reports an empty token header as an input finding (%j)', async tokenHeader => {
+    const onMissing = vi.fn()
+    const onInvalid = vi.fn()
+    const handler = vi.fn().mockResolvedValue({ content: 'record-only' })
+    const wrapped = hdpMiddleware(handler, { onMissing, onInvalid })
+
+    const response = await wrapped({ headers: { 'HDP-Token': tokenHeader }, content: 'hello' })
+
+    expect(response).toEqual({ content: 'record-only' })
+    expect(onInvalid).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      failedStep: 0,
+      error: expect.any(Error),
+    }))
+    expect(onMissing).not.toHaveBeenCalled()
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
   it('does not treat an expired record as an integrity failure', async () => {
     const { token, publicKey } = await makeToken(1)
     const onInvalid = vi.fn()
     const onValid = vi.fn()
     const handler = vi.fn().mockResolvedValue({ content: 'ok' })
     const wrapped = hdpMiddleware(handler, { verify: { publicKey }, onInvalid, onValid })
+
+    await new Promise<void>(resolve => setTimeout(
+      resolve,
+      Math.max(1, token.header.expires_at - Date.now() + 1),
+    ))
+    expect(token.header.expires_at).toBeLessThan(Date.now())
 
     const response = await wrapped({ headers: { 'HDP-Token': encodeHeader(token) }, content: 'hello' })
 
