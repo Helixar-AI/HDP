@@ -58,7 +58,7 @@ postprocessor = HdpNodePostprocessor(
 query_engine = index.as_query_engine(node_postprocessors=[postprocessor])
 ```
 
-The postprocessor returns every node. Nodes above the declared `data_classification` are recorded as violations when a signing key is configured. The deprecated `strict=True` and instrumentation's `on_violation="raise"` options raise `ValueError` during construction. `HDPScopeViolationError` remains importable but is deprecated and never raised.
+The postprocessor returns every node. Nodes above the declared `data_classification` are recorded as violations when a signing key is configured and the chain has capacity under `max_hops`. The deprecated `strict=True` and instrumentation's `on_violation="raise"` options raise `ValueError` during construction. `HDPScopeViolationError` remains importable but is deprecated and never raised.
 
 ### Verifying a token
 
