@@ -416,7 +416,7 @@ For compatibility, `strict=True` raises `ValueError` during middleware construct
 
 ```python
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from autogen import ConversableAgent, GroupChat, GroupChatManager
+from autogen import ConversableAgent, GroupChat, GroupChatManager, UserProxyAgent
 from hdp_autogen import HdpMiddleware, HdpPrincipal, ScopePolicy, verify_chain
 
 private_key = Ed25519PrivateKey.generate()
@@ -439,7 +439,19 @@ manager = GroupChatManager(groupchat=groupchat, llm_config=False)
 
 middleware.configure(manager)  # attaches recording hooks to the manager and agents
 
-# Run the GroupChat through the application's normal entry point, then inspect its record.
+# Start the GroupChat through the host agent. The wrapped manager.run_chat issues the token.
+user_proxy = UserProxyAgent(
+    "user_proxy",
+    human_input_mode="NEVER",
+    code_execution_config=False,
+)
+user_proxy.initiate_chat(
+    manager,
+    message="Summarise recent LLM papers",
+    max_turns=1,
+)
+
+# Inspect the record after the host run.
 token = middleware.export_token()
 if token is not None:
     result = verify_chain(token, private_key.public_key())
