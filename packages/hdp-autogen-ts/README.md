@@ -21,7 +21,7 @@ const wrapper = new HdpAgentWrapper({
     intent: "Summarise recent papers",
     authorized_tools: ["web_search"],
   },
-  onScopeViolation: finding => auditLog(finding),
+  onScopeViolation: finding => auditLog({ tool: finding.tool }),
 });
 
 await wrapper.init();
@@ -40,8 +40,8 @@ import { hdpMiddleware } from "@helixar_ai/hdp-autogen";
 const wrapped = hdpMiddleware(handler, {
   verify: { publicKey },
   onMissing: () => auditLog({ finding: "HDP token missing" }),
-  onInvalid: result => auditLog(result),
-  onValid: token => auditLog(token),
+  onInvalid: result => auditLog({ failedStep: result.failedStep, errorCode: result.error.code }),
+  onValid: token => auditLog({ token_id: token.header.token_id }),
 });
 
 const response = await wrapped({
@@ -61,6 +61,34 @@ The functional middleware accepts a handler and options. It has no `observe()` m
 `HDP_TOOLS` and `getHdpTools()` expose three OpenAI-compatible schemas: `hdp_issue_token`, `hdp_extend_chain`, and `hdp_verify_token`.
 
 Tokens use the HDP v0.1 wire format and are compatible with the Python AutoGen package.
+
+## Cross-language compatibility
+
+Tokens are wire-compatible with the Python `hdp-autogen` package. A token created in TypeScript can be verified in Python and vice versa. Both use RFC 8785 canonical JSON and Ed25519.
+
+## Releasing
+
+Published to [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) via GitHub Actions. Two ways to release:
+
+**Standalone** (publishes only this package):
+```bash
+git tag node/hdp-autogen/v0.1.2 && git push origin node/hdp-autogen/v0.1.2
+```
+
+Pipeline: `test-hdp-autogen-ts` → `vet-hdp-autogen-ts` ([ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard)) → `publish-hdp-autogen-ts-standalone`
+
+**With all Node packages** (publishes core + mcp + cli + autogen):
+```bash
+git tag v0.1.2 && git push origin v0.1.2
+```
+
+| Detail | Value |
+|---|---|
+| **npm package** | [`@helixar_ai/hdp-autogen`](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) |
+| **Standalone tag** | `node/hdp-autogen/v*` |
+| **Bundle tag** | `v*` (with all Node packages) |
+| **Workflow** | `.github/workflows/release.yml` |
+| **Auth** | `NPM_TOKEN` secret |
 
 ## Specification
 

@@ -14,8 +14,8 @@ import { hdpMiddleware } from "@helixar_ai/hdp-mcp";
 const wrapped = hdpMiddleware(myToolHandler, {
   verify: { publicKey },
   onMissing: () => auditLog({ finding: "HDP token missing" }),
-  onInvalid: result => auditLog(result),
-  onValid: token => auditLog(token),
+  onInvalid: result => auditLog({ failedStep: result.failedStep, errorCode: result.error.code }),
+  onValid: token => auditLog({ token_id: token.header.token_id }),
 });
 
 const response = await wrapped({
