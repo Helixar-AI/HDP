@@ -1,11 +1,16 @@
 // tests/security/replay-attack.test.ts
-import { describe, it, expect } from 'vitest'
-import { verifyToken } from '../../src/token/verifier.js'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { auditToken, verifyToken } from '../../src/token/verifier.js'
 import { issueToken } from '../../src/token/issuer.js'
 import { generateKeyPair } from '../../src/crypto/keys.js'
 
-describe('12.7 Token Reuse and Replay Attacks', () => {
-  it('rejects a valid token used in a different session', async () => {
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+describe('record-only session and expiry auditing', () => {
+  it('verifies a record from another session and reports the mismatch', async () => {
     const { privateKey, publicKey } = await generateKeyPair()
     const token = await issueToken({
       sessionId: 'session-original',
@@ -13,23 +18,27 @@ describe('12.7 Token Reuse and Replay Attacks', () => {
       scope: { intent: 'task', data_classification: 'public', network_egress: false, persistence: false },
       signingKey: privateKey, keyId: 'k1',
     })
-    const result = await verifyToken(token, { publicKey, currentSessionId: 'session-DIFFERENT' })
-    expect(result.valid).toBe(false)
-    expect(result.error?.code).toBe('SESSION_MISMATCH')
+    const result = await verifyToken(token, { publicKey })
+    const report = await auditToken(token, { publicKey, sessionId: 'session-DIFFERENT' })
+    expect(result).toEqual({ valid: true })
+    expect(report.session).toEqual({ status: 'mismatch' })
   })
 
-  it('rejects an expired token even with valid signature', async () => {
+  it('verifies an expired record without waiting for its expiry', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
     const { privateKey, publicKey } = await generateKeyPair()
     const token = await issueToken({
       sessionId: 'sess-1',
       principal: { id: 'u', id_type: 'opaque' },
       scope: { intent: 'task', data_classification: 'public', network_egress: false, persistence: false },
       signingKey: privateKey, keyId: 'k1',
-      expiresInMs: 1, // expires in 1ms
+      expiresInMs: 1,
     })
-    await new Promise(r => setTimeout(r, 10)) // let it expire
-    const result = await verifyToken(token, { publicKey, currentSessionId: 'sess-1' })
-    expect(result.valid).toBe(false)
-    expect(result.error?.code).toBe('TOKEN_EXPIRED')
+    vi.setSystemTime(10_000)
+    const result = await verifyToken(token, { publicKey })
+    const report = await auditToken(token, { publicKey })
+    expect(result).toEqual({ valid: true })
+    expect(report.recordingPeriod).toEqual({ status: 'within_period' })
   })
 })

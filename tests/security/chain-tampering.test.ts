@@ -28,8 +28,9 @@ describe('12.3 Delegation Chain Poisoning', () => {
         token.chain[1],
       ],
     }
-    const result = await verifyToken(poisoned, { publicKey, currentSessionId: 'sess-1' })
+    const result = await verifyToken(poisoned, { publicKey })
     expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(4)
     expect(result.error?.code).toBe('SIGNATURE_INVALID')
   })
 
@@ -37,8 +38,9 @@ describe('12.3 Delegation Chain Poisoning', () => {
     const { token, publicKey } = await twoHopToken()
     // Remove hop 1, leaving only hop 2 — creates seq gap
     const gapped = { ...token, chain: [token.chain[1]] }
-    const result = await verifyToken(gapped, { publicKey, currentSessionId: 'sess-1' })
+    const result = await verifyToken(gapped, { publicKey })
     expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(3)
     expect(result.error?.code).toBe('CHAIN_INTEGRITY')
   })
 })

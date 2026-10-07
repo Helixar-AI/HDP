@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
 DataClassification = Literal["public", "internal", "confidential", "restricted"]
-AgentType = Literal["orchestrator", "sub-agent", "tool-executor", "custom"]
+AgentType = str
 PrincipalIdType = Literal["email", "uuid", "did", "poh", "opaque"]
 
 

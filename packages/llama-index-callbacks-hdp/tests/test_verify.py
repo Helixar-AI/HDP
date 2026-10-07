@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -18,6 +19,7 @@ def _generate_key():
 def _issue_token(key: bytes, pub_key=None, session_id="s1", expired=False, max_hops=None) -> dict:
     import uuid
     now = int(time.time() * 1000)
+    issued_at = now - 2000 if expired else now
     expires_at = now - 1000 if expired else now + 86400000
     scope: dict = {"intent": "test", "data_classification": "internal", "network_egress": True, "persistence": False}
     if max_hops is not None:
@@ -26,7 +28,7 @@ def _issue_token(key: bytes, pub_key=None, session_id="s1", expired=False, max_h
         "hdp": "0.1",
         "header": {
             "token_id": str(uuid.uuid4()),
-            "issued_at": now,
+            "issued_at": issued_at,
             "expires_at": expires_at,
             "session_id": session_id,
             "version": "0.1",
@@ -91,7 +93,7 @@ class TestVerifyChain:
         key, pub = _generate_key()
         token = _issue_token(key)
         token = _add_hop(token, key, "action")
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub.public_bytes_raw())
         assert not result.valid
 
@@ -102,11 +104,26 @@ class TestVerifyChain:
         result = verify_chain(token, other_pub.public_bytes_raw())
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         key, pub = _generate_key()
         token = _issue_token(key, expired=True)
+        token = _add_hop(token, key, "record at expiry")
         result = verify_chain(token, pub.public_bytes_raw())
-        assert any("expired" in v.lower() for v in result.violations)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
+
+    def test_version_failure_precedes_root_signature_failure(self):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        token["hdp"] = "0.2"
+        token["signature"]["value"] = "A" * 86
+
+        result = verify_chain(token, pub.public_bytes_raw())
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 1" in result.violations[0]
 
     def test_max_hops_exceeded_flagged(self):
         key, pub = _generate_key()
@@ -116,6 +133,9 @@ class TestVerifyChain:
         token = _add_hop(token, key, "hop 2")
         result = verify_chain(token, pub.public_bytes_raw())
         assert any("max_hops" in v for v in result.violations)
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert "Step 5" in result.violations[0]
 
     def test_hop_results_detail(self):
         key, pub = _generate_key()
@@ -134,3 +154,42 @@ class TestVerifyChain:
             token = _add_hop(token, key, f"hop {i}")
         result = verify_chain(token, pub.public_bytes_raw())
         assert result.depth == 3
+
+
+class TestSerializedInputValidation:
+    def test_duplicate_member_string_fails_step_zero_and_clean_string_verifies(self):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        clean_json = json.dumps(token)
+
+        clean_result = verify_chain(clean_json, pub.public_bytes_raw())
+        duplicate_json = clean_json[:-1] + ',"hdp":"0.1"}'
+        duplicate_result = verify_chain(duplicate_json, pub.public_bytes_raw())
+
+        assert clean_result.valid is True
+        assert duplicate_result.valid is False
+        assert duplicate_result.violations == [
+            "Step 0: Input validation failed: duplicate JSON object member 'hdp'"
+        ]
+
+    @pytest.mark.parametrize(
+        "update,expected_error",
+        [
+            ({"principal": {"metadata": {"value": 9007199254740993}}, "scope": {}},
+             "token.principal.metadata.value integer must be exactly representable"),
+            ({"principal": {}, "scope": {"max_hops": None}},
+             "scope.max_hops must be a positive integer"),
+        ],
+    )
+    def test_section_three_invalid_dict_fails_step_zero(self, update, expected_error):
+        key, pub = _generate_key()
+        token = _issue_token(key)
+        token["principal"].update(update["principal"])
+        token["scope"].update(update["scope"])
+
+        result = verify_chain(token, pub.public_bytes_raw())
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert result.violations[0].startswith("Step 0: Input validation failed: ")
+        assert expected_error in result.violations[0]

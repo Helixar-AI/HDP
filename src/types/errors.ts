@@ -10,18 +10,21 @@ function formatTimestamp(timestamp: number): string {
   return Number.isNaN(date.getTime()) ? String(timestamp) : date.toISOString()
 }
 
+/** @deprecated Expiry is reported during audit and does not invalidate a record. */
 export class HdpTokenExpiredError extends HdpError {
   constructor(expiresAt: number) {
     super(`Token expired at ${formatTimestamp(expiresAt)}`, 'TOKEN_EXPIRED')
   }
 }
 
+/** @deprecated Issuance time does not affect record integrity verification. */
 export class HdpTokenNotYetValidError extends HdpError {
   constructor(issuedAt: number) {
     super(`Token is not valid before ${formatTimestamp(issuedAt)}`, 'TOKEN_NOT_YET_VALID')
   }
 }
 
+/** @deprecated Revocation state is not part of HDP record integrity verification. */
 export class HdpTokenRevokedError extends HdpError {
   constructor(tokenId: string) {
     super(`Token has been revoked: ${tokenId}`, 'TOKEN_REVOKED')
@@ -52,12 +55,14 @@ export class HdpChainIntegrityError extends HdpError {
   }
 }
 
+/** @deprecated Session mismatch is reported during audit and does not invalidate a record. */
 export class HdpSessionMismatchError extends HdpError {
   constructor() {
     super('Token session_id does not match current session', 'SESSION_MISMATCH')
   }
 }
 
+/** @deprecated Presenter identity is not part of HDP record integrity verification. */
 export class HdpPresenterMismatchError extends HdpError {
   constructor(expected: string, actual?: string) {
     super(

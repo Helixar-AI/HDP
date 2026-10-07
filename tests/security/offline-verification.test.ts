@@ -8,9 +8,8 @@
  * registry at registry_endpoint every 5,000ms before acting. If the registry
  * is unreachable, agents cannot safely proceed — a hard liveness dependency.
  *
- * HDP's response: the issuer selects a lifetime, session_id provides
- * cross-session replay defense, and each verifier uses local revocation state.
- * Verification requires only local inputs.
+ * HDP's integrity verification uses only the record and issuer public key.
+ * Session and lifetime findings are reported separately during audit.
  *
  * This test issues a token, extends it through a 3-hop chain, and verifies
  * the complete chain with zero network mocks, zero fetch stubs, and zero
@@ -68,21 +67,19 @@ describe('Offline Verification (HDP architectural guarantee)', () => {
 
     expect(token.chain).toHaveLength(3)
 
-    // Verification uses only local key, session, clock, and revocation inputs.
-    // No network, central registry, or resolver.
+    // Verification uses only the local issuer key, with no time or session input.
+    // No network, central registry, or resolver is consulted.
     const result = await verifyToken(token, {
       publicKey,
-      currentSessionId: 'sess-offline-proof',
     })
 
-    expect(result.valid).toBe(true)
-    expect(result.error).toBeUndefined()
+    expect(result).toEqual({ valid: true })
 
     // Structural guarantees confirmed:
     // - Root signature verified cryptographically (no registry lookup)
     // - All 3 hop signatures verified against cumulative chain state (no polling)
-    // - Session ID bound (no external session store required)
-    // - Token not expired (wall-clock check only — no network time service)
+    // - Session ID remains record metadata for audit
+    // - Expiry does not alter the integrity result
     expect(token.header.session_id).toBe('sess-offline-proof')
     expect(token.chain.every(h => typeof h.hop_signature === 'string')).toBe(true)
   })

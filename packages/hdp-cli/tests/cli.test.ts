@@ -5,13 +5,13 @@ import { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-async function makeValidToken() {
+async function makeValidToken(expiresInMs = 24 * 60 * 60 * 1000) {
   const { privateKey } = await generateKeyPair()
   let token = await issueToken({
     sessionId: 'sess-cli-test',
     principal: { id: 'u', id_type: 'opaque' },
     scope: { intent: 'cli test', data_classification: 'public', network_egress: false, persistence: false },
-    signingKey: privateKey, keyId: 'k1',
+    signingKey: privateKey, keyId: 'k1', expiresInMs,
   })
   token = await extendChain(token, { agent_id: 'a1', agent_type: 'orchestrator', action_summary: 'test hop', parent_hop: 0 }, privateKey)
   return token
@@ -40,6 +40,17 @@ describe('hdp-validate CLI', () => {
     expect(exitCode).toBe(0)
     expect(stdout).toContain('✓ VALID')
     expect(stdout).toContain(token.header.token_id)
+  })
+
+  it('exits 0 and notes when an expired record has ended its authorization period', async () => {
+    const token = await makeValidToken(10)
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    const { stdout, exitCode } = runCli(JSON.stringify(token))
+
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain('✓ VALID')
+    expect(stdout).toContain('the record\'s authorization period has ended')
   })
 
   it('exits 1 for invalid JSON', () => {

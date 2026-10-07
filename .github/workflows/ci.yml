@@ -40,6 +40,118 @@ jobs:
       - name: Build
         run: npm run build
 
+  test-hdp-mcp:
+    name: Test hdp-mcp (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core
+        run: npm run build
+
+      - name: Typecheck hdp-mcp
+        run: cd packages/hdp-mcp && npm run typecheck
+
+      - name: Build hdp-mcp
+        run: cd packages/hdp-mcp && npm run build
+
+      - name: Test hdp-mcp
+        run: cd packages/hdp-mcp && npm test
+
+  test-hdp-cli:
+    name: Test hdp-cli (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core
+        run: npm run build
+
+      - name: Typecheck hdp-cli
+        run: cd packages/hdp-cli && npm run typecheck
+
+      - name: Build hdp-cli
+        run: cd packages/hdp-cli && npm run build
+
+      - name: Test hdp-cli
+        run: cd packages/hdp-cli && npm test
+
+  test-hdp-autogen-ts:
+    name: Test hdp-autogen-ts (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core
+        run: npm run build
+
+      - name: Typecheck hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm run typecheck
+
+      - name: Build hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm run build
+
+      - name: Test hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm test
+
+  test-hdp-agent-framework:
+    name: Test hdp-agent-framework (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: packages/hdp-agent-framework
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: packages/hdp-agent-framework
+        run: pytest tests/ -v
+
   test-hdp-crewai:
     name: Test hdp-crewai (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

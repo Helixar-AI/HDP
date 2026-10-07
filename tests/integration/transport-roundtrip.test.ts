@@ -18,7 +18,7 @@ describe('Transport Roundtrip', () => {
     })
     const encoded = encodeHeader(token)
     const decoded = decodeHeader(encoded)
-    const result = await verifyToken(decoded, { publicKey, currentSessionId: 'sess-http-01' })
+    const result = await verifyToken(decoded, { publicKey })
     expect(result.valid).toBe(true)
   })
 
@@ -34,7 +34,7 @@ describe('Transport Roundtrip', () => {
     const tokenId = await storeToken(store, token)
     const retrieved = await resolveToken(store, tokenId)
     expect(retrieved).not.toBeNull()
-    const result = await verifyToken(retrieved!, { publicKey, currentSessionId: 'sess-ref-01' })
+    const result = await verifyToken(retrieved!, { publicKey })
     expect(result.valid).toBe(true)
   })
 })

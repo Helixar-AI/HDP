@@ -36,21 +36,20 @@ export {
   computeTokenDigest,
 } from './token/verifier.js'
 export type {
-  RevocationState,
+  IntegrityStep,
+  TokenInput,
   VerificationOptions,
   VerificationResult,
-  RecordIntegrityStatus,
-  RecordIntegrityReport,
-  AcceptanceStatus,
-  AcceptanceReport,
-  HistoricalAcceptanceStatus,
-  HistoricalAcceptanceEvidence,
-  HistoricalAcceptanceReport,
-  HistoricalAuditOptions,
-  HistoricalAuditReport,
+  AuditOptions,
+  AuditReport,
 } from './token/verifier.js'
-export { issueReAuthToken } from './token/reauth.js'
-export type { ReAuthOptions, ReAuthToken } from './token/reauth.js'
+export { issueSupersedingToken, issueReAuthToken } from './token/reauth.js'
+export type {
+  SupersedingTokenOptions,
+  SupersedingToken,
+  ReAuthOptions,
+  ReAuthToken,
+} from './token/reauth.js'
 
 // Multi-principal delegation
 export { verifyPrincipalChain } from './token/multi-principal.js'

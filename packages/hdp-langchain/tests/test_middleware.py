@@ -6,7 +6,7 @@ Run with: cd packages/hdp-langchain && PYTHONPATH=src pytest tests/ -v
 from __future__ import annotations
 
 import base64
-import time
+import json
 import uuid
 from unittest.mock import MagicMock
 
@@ -112,6 +112,24 @@ class TestNonBlocking:
         mw, _ = _make_middleware()
         mw._extend_chain(agent_id="tool", action_summary="test", agent_type="tool-executor")
         assert mw.export_token() is None
+
+    def test_root_validation_failure_does_not_abort_chain_result(self, monkeypatch, caplog):
+        mw, _ = _make_middleware()
+        handler = mw.get_callback_handler()
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr("hdp_langchain.middleware._validate_token_input", fail_validation)
+
+        def run_chain():
+            handler.on_chain_start(_chain_serialized(), {}, run_id=_make_run_id())
+            return "chain result"
+
+        assert run_chain() == "chain result"
+        assert mw.export_token() is None
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -223,26 +241,14 @@ class TestScopeEnforcement:
             for hop in token["chain"]
         )
 
-    def test_strict_mode_raises_on_unauthorized_tool(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        handler = mw.get_callback_handler()
-        with pytest.raises(HDPScopeViolationError) as exc_info:
-            _invoke_on_tool_start(handler, "browser_tool")
-        assert exc_info.value.tool == "browser_tool"
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
+                strict=True,
+            )
 
-    def test_strict_mode_allows_authorized_tool(self):
-        mw, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["web_search"]),
-            strict=True,
-        )
-        mw.before_kickoff()
-        handler = mw.get_callback_handler()
-        _invoke_on_tool_start(handler, "web_search")  # should not raise
-        assert len(mw.export_token()["chain"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +288,7 @@ class TestVerification:
         mw.before_kickoff()
         mw._extend_chain(agent_id="tool_a", action_summary="r", agent_type="tool-executor")
         token = mw.export_token()
-        token["chain"][0]["hop_signature"] = "AAAA"
+        token["chain"][0]["hop_signature"] = "A" * 86
         result = verify_chain(token, pub)
         assert not result.valid
 
@@ -293,23 +299,21 @@ class TestVerification:
         result = verify_chain(mw.export_token(), other_pub)
         assert not result.valid
 
-    def test_expired_token_flagged(self):
+    def test_hop_at_expiry_is_recorded_without_affecting_validity(self):
         from hdp_langchain._crypto import sign_root
-        priv = Ed25519PrivateKey.generate()
-        pub = priv.public_key()
-        mw = HdpMiddleware(
-            signing_key=priv.private_bytes_raw(),
-            session_id="s",
-            principal=HdpPrincipal(id="u", id_type="opaque"),
-            scope=ScopePolicy(intent="x"),
-        )
+        mw, pub = _make_middleware()
         mw.before_kickoff()
         token = mw.export_token()
-        token["header"]["expires_at"] = int(time.time() * 1000) - 1000
-        unsigned = {k: v for k, v in token.items() if k != "signature"}
-        token["signature"] = sign_root(unsigned, priv.private_bytes_raw(), "k")
-        result = verify_chain(token, pub)
-        assert any("expired" in v.lower() for v in result.violations)
+        token["header"]["issued_at"] = 0
+        token["header"]["expires_at"] = 1
+        token["signature"] = sign_root(token, mw._signing_key, mw._key_id)
+        mw._token = token
+        mw._extend_chain(agent_id="tool-a", action_summary="after expiry", agent_type="custom")
+
+        result = verify_chain(mw.export_token(), pub)
+        assert result.valid is True
+        assert result.violations == []
+        assert result.recorded_after_period == [1]
 
     def test_empty_chain_valid(self):
         mw, pub = _make_middleware()
@@ -426,3 +430,121 @@ class TestCallbackHandler:
         handler.on_tool_start({}, "input", run_id=_make_run_id())
         hop = mw.export_token()["chain"][0]
         assert hop["agent_id"] == "unknown_tool"
+
+
+class TestSerializedInputValidation:
+    def test_duplicate_member_string_fails_step_zero_and_clean_string_verifies(self):
+        mw, pub = _make_middleware()
+        mw.before_kickoff()
+        clean_json = json.dumps(mw.export_token())
+
+        clean_result = verify_chain(clean_json, pub)
+        duplicate_json = clean_json[:-1] + ',"hdp":"0.1"}'
+        duplicate_result = verify_chain(duplicate_json, pub)
+
+        assert clean_result.valid is True
+        assert duplicate_result.valid is False
+        assert duplicate_result.violations == [
+            "Step 0: Input validation failed: duplicate JSON object member 'hdp'"
+        ]
+
+    @pytest.mark.parametrize(
+        "update,expected_error",
+        [
+            ({"principal": {"metadata": {"value": 9007199254740993}}, "scope": {}},
+             "token.principal.metadata.value integer must be exactly representable"),
+            ({"principal": {}, "scope": {"max_hops": None}},
+             "scope.max_hops must be a positive integer"),
+        ],
+    )
+    def test_section_three_invalid_dict_fails_step_zero(self, update, expected_error):
+        mw, pub = _make_middleware()
+        mw.before_kickoff()
+        token = mw.export_token()
+        token["principal"].update(update["principal"])
+        token["scope"].update(update["scope"])
+
+        result = verify_chain(token, pub)
+
+        assert result.valid is False
+        assert len(result.violations) == 1
+        assert result.violations[0].startswith("Step 0: Input validation failed: ")
+        assert expected_error in result.violations[0]
+
+
+class TestRecordAppendIsolation:
+    def test_signing_failure_does_not_abort_tool_result(self, monkeypatch, caplog):
+        mw, _ = _make_middleware(
+            scope=ScopePolicy(intent="private intent", authorized_tools=["allowed"])
+        )
+        mw.before_kickoff()
+        handler = mw.get_callback_handler()
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr("hdp_langchain.middleware.sign_hop", fail_signing)
+
+        def invoke_tool():
+            handler.on_tool_start(
+                _tool_serialized("forbidden"), "input", run_id=_make_run_id()
+            )
+            return {"tool": "forbidden", "result": "produced"}
+
+        result = invoke_tool()
+
+        assert result == {"tool": "forbidden", "result": "produced"}
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
+
+    def test_export_token_is_a_defensive_deep_copy(self):
+        mw, _ = _make_middleware()
+        mw.before_kickoff()
+        original_session = mw._token["header"]["session_id"]
+        original_signature = mw._token["signature"]["value"]
+        exported = mw.export_token()
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert mw._token["header"]["session_id"] == original_session
+        assert mw._token["signature"]["value"] == original_signature
+
+
+class TestIssuanceValidation:
+    @pytest.mark.parametrize("expires_in_ms", [0, -1, True, 1.5, 2**53])
+    def test_invalid_ttl_fails_at_middleware_construction(self, expires_in_ms):
+        with pytest.raises(ValueError, match="expires_in_ms"):
+            _make_middleware(expires_in_ms=expires_in_ms)
+
+    def test_root_issuance_rejects_invalid_max_hops(self):
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
+
+    def test_invalid_principal_id_type_fails_at_construction(self):
+        key, _ = _generate_key()
+
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpMiddleware(
+                signing_key=key,
+                session_id="test-session",
+                principal=HdpPrincipal(id="u", id_type="x-a\rb"),
+                scope=ScopePolicy(intent="test"),
+            )
+
+    def test_invalid_internal_record_is_rejected_before_signing(self, monkeypatch, caplog):
+        mw, _ = _make_middleware()
+        mw.before_kickoff()
+        mw._token["scope"]["max_hops"] = None
+        signer_called = []
+
+        def unexpected_signing(*args, **kwargs):
+            signer_called.append(True)
+            raise AssertionError("invalid record reached signer")
+
+        monkeypatch.setattr("hdp_langchain.middleware.sign_hop", unexpected_signing)
+        mw._extend_chain("agent", "summary")
+
+        assert mw._token["chain"] == []
+        assert signer_called == []
+        assert "HDP audit record append failed" in caplog.text

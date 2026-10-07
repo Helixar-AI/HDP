@@ -1,87 +1,65 @@
-# Streaming Sessions and Scope Evolution
+# Streaming Sessions and Superseding Records
 
-## The Problem
+Long-running tasks can fill a record's `max_hops`, continue beyond its declared `expires_at`, or receive fresh human-approved context. HDP records those events; none is a reason for HDP to stop the task or condition an action.
 
-Long-running agentic sessions present a challenge: the initial scope may be too narrow by the time the task is underway, `max_hops` may be exhausted before the task completes, or a new high-risk action emerges that requires fresh human approval.
+## Recording depth and new records
 
-HDP's answer is **re-authorization**: each scope change is a new signed delegation record, producing a new token that references its predecessor.
-
-## Core Principle
-
-> Scope evolution must be explicit and human-initiated.
-
-Implicit scope expansion — an agent quietly acquiring new capabilities mid-session — is precisely the failure mode HDP is designed to make visible. The `parent_token_id` chain creates an auditable record of every scope change: who approved it, when, and what changed.
-
-## The Re-Authorization Pattern
+`scope.max_hops` is the number of hops a token can hold. When its chain is full, it is not extended. The agent's next action may continue without another hop in that record. If more recording depth is needed, an issuer can create a superseding record with a new `token_id` and an empty chain.
 
 ```typescript
-import { issueReAuthToken } from '@helixar_ai/hdp'
+import {
+  extendChain,
+  generateKeyPair,
+  issueToken,
+  issueSupersedingToken,
+} from "@helixar_ai/hdp";
 
-// Phase 1: initial authorization
-const token = await issueToken({ ..., scope: { intent: 'analyze Q1', max_hops: 2 } })
-
-// ... agents work, max_hops exhausted ...
-
-// Phase 2: human approves scope expansion — system calls issueReAuthToken
-const reAuthToken = await issueReAuthToken({
-  original: token,               // parent_token_id set automatically
+const { privateKey } = await generateKeyPair();
+const issued = await issueToken({
+  sessionId: "sess-analysis-1",
+  principal: { id: "analyst-42", id_type: "opaque" },
   scope: {
-    intent: 'analyze Q1 + Q2',  // expanded intent
-    max_hops: 3,                  // fresh hop budget
-    data_classification: 'confidential',
+    intent: "Analyze the quarterly sales report",
+    data_classification: "confidential",
     network_egress: false,
     persistence: false,
+    max_hops: 1,
   },
-  signingKey: issuerPrivateKey,
-  keyId: 'issuer-key-v1',
-})
+  signingKey: privateKey,
+  keyId: "issuer-key-v1",
+});
+const fullRecord = await extendChain(issued, {
+  agent_id: "analysis-agent",
+  agent_type: "sub-agent",
+  action_summary: "Summarize the quarterly sales report",
+  parent_hop: 0,
+}, privateKey);
 
-// reAuthToken.header.parent_token_id === token.header.token_id ✓
-// reAuthToken.chain === [] (fresh chain, hop counter resets)
+// The full record is not extended again. The application continues its task.
+const successor = await issueSupersedingToken({
+  original: fullRecord,
+  scope: { ...fullRecord.scope, max_hops: 3 },
+  signingKey: privateKey,
+  keyId: "issuer-key-v1",
+  expiresInMs: 60 * 60 * 1000,
+});
+console.log({
+  token_id: successor.header.token_id,
+  parentTokenId: successor.header.parent_token_id,
+  chainLength: successor.chain.length,
+});
 ```
 
-The re-auth token:
-- Gets a new `token_id`, `issued_at`, and `expires_at`
-- Records `parent_token_id` pointing to the superseded token
-- Inherits `scope`, `principal`, and `session_id` from the original (all overridable)
-- Starts with an empty chain — the hop counter resets
+`issueSupersedingToken()` sets `parent_token_id` before signing. The successor has new issuance and expiry timestamps, inherits the original session, principal, and scope unless overridden, and starts with an empty chain. The SDK uses a 24-hour fallback when `expiresInMs` is omitted; HDP defines no protocol default.
 
-## When to Re-Authorize
+## Expiry is audit metadata
 
-| Trigger | Action |
-|---|---|
-| `max_hops` exhausted | Re-authorize with a new hop budget |
-| Task scope has expanded | Re-authorize with updated `intent`, `authorized_tools`, or `authorized_resources` |
-| Token approaching expiry | Re-authorize with a fresh `expires_at` |
-| High-risk action emerged | Re-authorize; the human explicitly reviews and approves the new action |
-| Session handoff | Re-authorize with updated `session_id` if session is rotating |
+`expires_at` records the end of the period the principal declared at issuance. It must be greater than `issued_at`, but it does not affect integrity verification or stop a task. A hop at or after `expires_at` is recorded like any other and is reported by `auditToken()` as `recorded_after_period` with the hop sequence numbers.
 
-## Token Lifetime Guidance
+If a principal makes a fresh approval or changes the declared context, a new linked record can preserve that update. This is an issuance and audit pattern, not an HDP runtime gate. Issuing a successor does not invalidate the earlier record or revoke it.
 
-HDP defines no default token lifetime. Choose the shortest lifetime the task permits and maintain verifier-local revocation state keyed by `token_id`. Re-authorization records lineage and scope evolution; it does not revoke the earlier token. Revoke that token explicitly wherever live use must stop.
+## Audit linked records
 
-| Session type | Recommended `expiresInMs` |
-|---|---|
-| Interactive / human-in-loop | 1–4 hours |
-| Batch / overnight job | 8–12 hours |
-| Continuous pipeline | 1 hour; re-authorize automatically at each phase |
-| High-risk action | 15–30 minutes |
+A `parent_token_id` identifies a linked record, but HDP v0.1 does not encode whether the relationship is supersession or joint approval. Auditors report `unknown` unless trusted application context supplies the relationship. To audit a task's history, retain all related tokens, trusted issuer public keys, and the context that identifies each link.
 
-## Auditing the Re-Authorization Chain
-
-To reconstruct the full authorization history of a session, collect all tokens with the same `header.session_id` and walk the `parent_token_id` links:
-
-```
-T1 (original, max_hops: 2)
-  └─ T2 (re-auth, parent_token_id: T1, scope expanded)
-       └─ T3 (re-auth, parent_token_id: T2, high-risk approval)
-```
-
-Each link is a separately signed issuer record. Verifiers who need the full history verify each token independently and retain the session and revocation context needed to interpret historical acceptance.
-
-## What Re-Authorization Is Not
-
-- **Not a mutable token.** The original token is never modified. It remains eligible for live acceptance until it expires or is placed in a verifier's local revocation state.
-- **Not automatic.** `issueReAuthToken` must be called by the system that obtained the human's approval. The agent cannot re-authorize itself.
-- **Not a capability grant.** Re-authorization records that a human approved an expanded scope; it does not enforce that scope at runtime.
-- **Not revocation.** Issuing a successor records lineage but does not invalidate its predecessor.
+The original token remains a valid record of what its issuer signed. A hop added after its `expires_at` remains in that token and can still pass integrity verification; the audit report separately marks its recording period.

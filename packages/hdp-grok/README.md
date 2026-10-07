@@ -101,8 +101,8 @@ HdpMiddleware(
 | Method | Returns | Notes |
 |---|---|---|
 | `issue_token(scope, expires_in)` | `{"token": "<json>"}` | Raises `ValueError` if `principal_id` not set |
-| `extend_chain(delegatee_id, additional_scope)` | `{"new_token": "<json>"}` | Raises `HdpTokenMissingError` / `HdpTokenExpiredError` |
-| `verify_token(token_str)` | `{"valid": bool, "hop_count": int, ...}` | Uses public key derived at init |
+| `extend_chain(delegatee_id, additional_scope)` | `{"new_token": "<json>"}` | Raises `HdpTokenMissingError` if no root token has been issued |
+| `verify_token(token_str)` | `{"valid": bool, "hop_count": int, ...}` | `valid` covers integrity; includes `recorded_after_period` and `integrity_violations` |
 | `handle_tool_call(name, args)` | `dict` | Routes any `hdp_*` tool call; handles camelCase from Grok |
 | `export_current_token()` | `dict \| None` | Live in-memory token |
 | `reset()` | `None` | Clears token and hop counter; keeps session |
@@ -110,6 +110,8 @@ HdpMiddleware(
 ### `get_hdp_tools() → list[dict]`
 
 Returns the three OpenAI-compatible tool schemas ready to pass to `tools=`.
+
+HDP tokens are records and cannot gate actions. Expiry does not affect `valid`; the legacy `expired` field remains for compatibility. `recorded_after_period` lists hop sequence numbers whose timestamps are at or after `expires_at`. `HdpTokenExpiredError` remains importable but is deprecated and never raised. `hdp_verify_token` is an audit operation and must not be used to condition an action.
 
 ---
 

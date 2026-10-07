@@ -17,8 +17,9 @@ describe('12.1 Token Injection and Forgery', () => {
       keyId: 'attacker-key',
     })
 
-    const result = await verifyToken(forgedToken, { publicKey: legitimatePublicKey, currentSessionId: 'sess-target' })
+    const result = await verifyToken(forgedToken, { publicKey: legitimatePublicKey })
     expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(2)
     expect(result.error?.code).toBe('SIGNATURE_INVALID')
   })
 
@@ -32,8 +33,9 @@ describe('12.1 Token Injection and Forgery', () => {
       keyId: 'k1',
     })
     const tampered = { ...token, scope: { ...token.scope, data_classification: 'restricted' as const, authorized_tools: ['*'] } }
-    const result = await verifyToken(tampered, { publicKey, currentSessionId: 'sess-1' })
+    const result = await verifyToken(tampered, { publicKey })
     expect(result.valid).toBe(false)
+    if (!result.valid) expect(result.failedStep).toBe(2)
     expect(result.error?.code).toBe('SIGNATURE_INVALID')
   })
 })

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 import json
+import logging
 import os
 import re
 import time
@@ -11,7 +13,14 @@ from typing import Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ._crypto import extend_token_chain, issue_root_token, verify_token_with_key
+from ._crypto import (
+    extend_token_chain,
+    issue_root_token,
+    validate_root_token_config,
+    verify_token_with_key,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class HdpSigningKeyError(Exception):
@@ -23,7 +32,7 @@ class HdpTokenMissingError(Exception):
 
 
 class HdpTokenExpiredError(Exception):
-    """Current token's expires_at has passed."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
 
 def _resolve_key(signing_key: bytes | str | None) -> bytes:
@@ -75,6 +84,10 @@ class HdpMiddleware:
             name=tool_call.function.name,
             args=json.loads(tool_call.function.arguments),
         )
+
+    ``principal_id_type`` selects the configured principal identifier type and
+    defaults to ``opaque``. ``scope`` sets default authorized tools for root
+    tokens; per-call scope values override it.
     """
 
     def __init__(
@@ -84,12 +97,27 @@ class HdpMiddleware:
         default_expires_in: int = 3600,
         session_id: str | None = None,
         principal_id: str | None = None,
+        principal_id_type: str = "opaque",
+        scope: list[str] | None = None,
     ) -> None:
         self.signing_key: bytes = _resolve_key(signing_key)
         self.key_id = key_id
         self.default_expires_in = default_expires_in
         self.session_id: str = session_id or str(uuid.uuid4())
         self.principal_id: Optional[str] = principal_id
+        self.principal_id_type = principal_id_type
+        self.default_scope = scope if scope is not None else []
+
+        validate_root_token_config(
+            key_id=self.key_id,
+            session_id=self.session_id,
+            principal_id=(
+                principal_id if principal_id is not None else "validation-principal"
+            ),
+            principal_id_type=self.principal_id_type,
+            scope=self.default_scope,
+            default_expires_in=self.default_expires_in,
+        )
 
         # Derive public key once at init for use in verify_token
         self._public_key_bytes: bytes = (
@@ -111,23 +139,33 @@ class HdpMiddleware:
         """Issue (or re-issue) the root HDP token.
 
         Returns:
-            {"token": "<json_string>"}
+            {"token": "<json_string>"} or {"token": None} if recording fails.
         """
-        if not self.principal_id:
-            raise ValueError(
-                "principal_id must be set at HdpMiddleware.__init__() before calling issue_token()."
-            )
-        token = issue_root_token(
-            signing_key=self.signing_key,
-            key_id=self.key_id,
-            session_id=self.session_id,
-            principal_id=self.principal_id,
-            scope=scope or [],
-            expires_in=expires_in if expires_in is not None else self.default_expires_in,
-        )
-        self._current_token = token
+        self._current_token = None
         self._hop_count = 0
-        return {"token": json.dumps(token)}
+        try:
+            if not self.principal_id:
+                raise ValueError(
+                    "principal_id must be set at HdpMiddleware.__init__() before calling issue_token()."
+                )
+            token = issue_root_token(
+                signing_key=self.signing_key,
+                key_id=self.key_id,
+                session_id=self.session_id,
+                principal_id=self.principal_id,
+                principal_id_type=self.principal_id_type,
+                scope=scope if scope is not None else self.default_scope,
+                expires_in=expires_in if expires_in is not None else self.default_expires_in,
+            )
+            token_json = json.dumps(token)
+            self._current_token = token
+            self._hop_count = 0
+            return {"token": token_json}
+        except Exception:
+            logger.warning("HDP root record issuance failed; action continues")
+            self._current_token = None
+            self._hop_count = 0
+            return {"token": None}
 
     def extend_chain(
         self,
@@ -143,13 +181,6 @@ class HdpMiddleware:
             raise HdpTokenMissingError(
                 "No current token. Call issue_token() before extend_chain()."
             )
-        now_ms = int(time.time() * 1000)
-        expires_at = self._current_token.get("header", {}).get("expires_at", 0)
-        if now_ms > expires_at:
-            raise HdpTokenExpiredError(
-                f"Current HDP token expired at {expires_at}. Call issue_token() to rotate."
-            )
-
         new_token = extend_token_chain(
             parent_token=self._current_token,
             signing_key=self.signing_key,
@@ -158,7 +189,7 @@ class HdpMiddleware:
             additional_scope=additional_scope or [],
         )
         self._current_token = new_token
-        self._hop_count += 1
+        self._hop_count = len(new_token.get("chain", []))
         return {"new_token": json.dumps(new_token)}
 
     def verify_token(self, token: str) -> dict:
@@ -203,8 +234,8 @@ class HdpMiddleware:
     # ── Inspection ───────────────────────────────────────────────────────────
 
     def export_current_token(self) -> dict | None:
-        """Return the live in-memory token dict, or None before issue_token."""
-        return self._current_token
+        """Return a defensive copy of the current token, if one was issued."""
+        return deepcopy(self._current_token)
 
     def __repr__(self) -> str:
         valid = self._current_token is not None

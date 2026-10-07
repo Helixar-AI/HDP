@@ -1,0 +1,41 @@
+{
+  "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+  "id_type_cases": {
+    "accepted": "x-custom",
+    "rejected": [
+      "x-custom\n",
+      "x-\n",
+      "x-a\nb",
+      "x-a\rb",
+      "x-a\u2028b",
+      "x-a\u2029b",
+      "x-"
+    ]
+  },
+  "token": {
+    "chain": [],
+    "hdp": "0.1",
+    "header": {
+      "expires_at": 1700003600000,
+      "issued_at": 1700000000000,
+      "session_id": "section3-validation",
+      "token_id": "123e4567-e89b-42d3-a456-426614174000",
+      "version": "0.1"
+    },
+    "principal": {
+      "id": "alice",
+      "id_type": "opaque"
+    },
+    "scope": {
+      "data_classification": "public",
+      "intent": "Read one report",
+      "network_egress": false,
+      "persistence": false
+    },
+    "signature": {
+      "alg": "Ed25519",
+      "kid": "section3-test-key",
+      "value": "41LpsxW41yN00YnMMofiOYiGwGnUan6Y7OAVcqg2ukGTfQdbnK1x7bXIyj5Zp1XeFMR7nXjwUtYDHgheEAgTAQ"
+    }
+  }
+}

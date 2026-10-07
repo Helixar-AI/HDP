@@ -1,5 +1,7 @@
 # HDP Reference Implementation — Initial Security Audit Report
 
+**2026-10-07 note:** Draft -03 removed the acceptance checks described in this report. This dated audit record and its findings are unchanged.
+
 **Date:** 2026-03-26
 **Scope:** src/crypto/, src/token/, src/chain/, src/privacy/
 

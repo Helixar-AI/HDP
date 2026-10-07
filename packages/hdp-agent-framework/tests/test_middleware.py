@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Helixar Limited
-"""Failing tests for HdpMiddleware (agent-framework).
-
-All tests in this file MUST FAIL until middleware.py is implemented (Task 4).
-Expected failure reason: ImportError — HdpMiddleware, ScopePolicy,
-HDPScopeViolationError are not yet exported from hdp_agent_framework.
-"""
+"""Tests for the agent-framework HDP middleware."""
 
 from __future__ import annotations
 
@@ -81,10 +76,16 @@ async def _process(mw: HdpMiddleware, agent_name: str = "agent-1") -> None:
     await mw.process(ctx, AsyncMock())
 
 
-async def _function_middleware_call(mw: HdpMiddleware, tool_name: str) -> None:
+async def _function_middleware_call(
+    mw: HdpMiddleware,
+    tool_name: str,
+    call_next: AsyncMock | None = None,
+) -> AsyncMock:
     """Invoke mw._function_middleware with a fake function context."""
     ctx = FakeFunctionContext(function=FakeFunctionInfo(name=tool_name))
-    await mw._function_middleware(ctx, AsyncMock())
+    next_call = call_next or AsyncMock()
+    await mw._function_middleware(ctx, next_call)
+    return next_call
 
 
 # ---------------------------------------------------------------------------
@@ -233,32 +234,133 @@ class TestFunctionMiddlewareScopeEnforcement:
             scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
         )
         await _process(mw)
-        await _function_middleware_call(mw, "forbidden_tool")
+        call_next = AsyncMock()
+        await _function_middleware_call(mw, "forbidden_tool", call_next)
+        call_next.assert_awaited_once()
         token = mw.export_token()
         assert token["scope"].get("extensions") is None
         assert token["chain"][-1]["agent_id"] == "forbidden_tool"
         assert token["chain"][-1]["action_summary"] == "attempted out-of-scope tool call: forbidden_tool"
         assert token["chain"][-1]["hop_signature"]
 
-    @pytest.mark.asyncio
-    async def test_strict_mode_raises_on_unauthorized_tool(self):
-        mw, _, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
-            strict=True,
-        )
-        await _process(mw)
-        with pytest.raises(HDPScopeViolationError):
-            await _function_middleware_call(mw, "forbidden_tool")
+    def test_strict_mode_is_rejected_at_construction(self):
+        assert issubclass(HDPScopeViolationError, Exception)
+        with pytest.raises(ValueError, match="HDP tokens are records and cannot gate actions"):
+            _make_middleware(
+                scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"]),
+                strict=True,
+            )
 
     @pytest.mark.asyncio
-    async def test_strict_mode_does_not_raise_on_authorized_tool(self):
+    async def test_full_chain_does_not_skip_tool_action(self):
         mw, _, _ = _make_middleware(
-            scope=ScopePolicy(intent="x", authorized_tools=["safe_tool"]),
-            strict=True,
+            scope=ScopePolicy(intent="x", authorized_tools=["allowed_tool"], max_hops=1),
         )
         await _process(mw)
-        # Must not raise
-        await _function_middleware_call(mw, "safe_tool")
+        call_next = AsyncMock()
+
+        await _function_middleware_call(mw, "allowed_tool", call_next)
+
+        call_next.assert_awaited_once()
+        assert len(mw.export_token()["chain"]) == 1
+
+
+class TestRecordAppendIsolation:
+    @pytest.mark.asyncio
+    async def test_signing_failure_does_not_abort_out_of_scope_tool_action(self, monkeypatch, caplog):
+        mw, _, _ = _make_middleware(
+            scope=ScopePolicy(intent="private intent", authorized_tools=["allowed"])
+        )
+        await _process(mw)
+
+        def fail_signing(*args, **kwargs):
+            raise RuntimeError("principal and intent must not be logged")
+
+        monkeypatch.setattr("hdp_agent_framework.middleware.sign_hop", fail_signing)
+        executed = []
+        call_next = AsyncMock(side_effect=lambda: executed.append("tool executed"))
+
+        returned_call = await _function_middleware_call(mw, "forbidden", call_next)
+
+        assert returned_call is call_next
+        assert executed == ["tool executed"]
+        assert "HDP audit record append failed" in caplog.text
+        assert "principal and intent must not be logged" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_root_validation_failure_does_not_abort_agent_action(self, monkeypatch, caplog):
+        mw, _, _ = _make_middleware()
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr("hdp_agent_framework.middleware._validate_token_input", fail_validation)
+        action_results = []
+
+        async def call_next():
+            action_results.append("agent result")
+
+        await mw.process(FakeChatContext(metadata={"agent_name": "agent-1"}), call_next)
+
+        assert action_results == ["agent result"]
+        assert mw.export_token() is None
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_export_token_is_a_defensive_deep_copy(self):
+        mw, _, _ = _make_middleware()
+        await _process(mw)
+        exported = mw.export_token()
+        original_session = mw._token["header"]["session_id"]
+        original_signature = mw._token["signature"]["value"]
+
+        exported["header"]["session_id"] = "corrupted"
+        exported["signature"]["value"] = "corrupted"
+
+        assert mw._token["header"]["session_id"] == original_session
+        assert mw._token["signature"]["value"] == original_signature
+
+
+class TestIssuanceValidation:
+    @pytest.mark.parametrize("expires_in_ms", [0, -1, True, 1.5, 2**53])
+    def test_invalid_ttl_fails_at_middleware_construction(self, expires_in_ms):
+        with pytest.raises(ValueError, match="expires_in_ms"):
+            _make_middleware(expires_in_ms=expires_in_ms)
+
+    def test_root_issuance_rejects_invalid_max_hops(self):
+        with pytest.raises(ValueError, match="max_hops must be a positive integer"):
+            _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
+
+    def test_invalid_principal_id_type_fails_at_construction(self):
+        key, _ = _generate_key()
+
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpMiddleware(
+                signing_key=key,
+                session_id="test-session",
+                principal=HdpPrincipal(id="u", id_type="x-a\rb"),
+                scope=ScopePolicy(intent="test"),
+            )
+
+    @pytest.mark.asyncio
+    async def test_invalid_internal_record_is_rejected_before_signing(self, monkeypatch, caplog):
+        mw, _, _ = _make_middleware()
+        await _process(mw)
+        original_chain = list(mw._token["chain"])
+        mw._token["scope"]["max_hops"] = None
+        signer_called = []
+
+        def unexpected_signing(*args, **kwargs):
+            signer_called.append(True)
+            raise AssertionError("invalid record reached signer")
+
+        monkeypatch.setattr("hdp_agent_framework.middleware.sign_hop", unexpected_signing)
+        mw._extend_chain("agent")
+
+        assert mw._token["chain"] == original_chain
+        assert signer_called == []
+        assert "HDP audit record append failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------

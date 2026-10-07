@@ -1,54 +1,37 @@
-/**
- * Re-authorization utilities for long-running and streaming sessions.
- *
- * When a session's scope needs to evolve — because max_hops is exhausted,
- * the task has expanded, or a high-risk action requires fresh human approval —
- * issue a new token with parent_token_id pointing to the original.
- *
- * Each scope change is a distinct signed delegation record.
- * The audit trail of parent_token_id chains documents how scope evolved.
- */
 import { TokenBuilder } from './builder.js'
 import { signRoot } from '../crypto/sign.js'
-import type { HdpToken, HdpPrincipal, HdpScope } from '../types/token.js'
+import type { HdpToken, HdpPrincipal, HdpScope, UnsignedToken } from '../types/token.js'
 
-export interface ReAuthOptions {
-  /** The token being superseded (its token_id becomes parent_token_id). */
+export interface SupersedingTokenOptions {
+  /** The record being superseded; its token_id becomes parent_token_id. */
   original: HdpToken
-  /** New scope for the re-authorized session. Defaults to original scope if omitted. */
+  /** Scope for the new record. Defaults to the original scope. */
   scope?: Partial<HdpScope>
-  /** New session ID, if the session is being rotated. Defaults to original session ID. */
+  /** Session for the new record. Defaults to the original session_id. */
   sessionId?: string
-  /** Override principal. Defaults to original principal. */
+  /** Principal for the new record. Defaults to the original principal. */
   principal?: HdpPrincipal
-  /** Issuer-selected lifetime. The SDK currently falls back to 24h; HDP defines no protocol default. */
+  /** Issuer-selected lifetime. Omission uses the SDK's 24-hour fallback; HDP defines no protocol default. */
   expiresInMs?: number
-  /** Ed25519 private key for signing the new token. */
+  /** Ed25519 private key for signing the new record. */
   signingKey: Uint8Array
   /** Key ID for the signature. */
   keyId: string
 }
 
-export interface ReAuthToken extends HdpToken {
+export type SupersedingToken = HdpToken & {
   header: HdpToken['header'] & { parent_token_id: string }
 }
 
 /**
- * Issue a re-authorization token that supersedes an existing token.
+ * Issue a new record that supersedes an existing token.
  *
- * The new token:
- * - Has a fresh token_id, issued_at, and expires_at
- * - Records parent_token_id pointing to the original token
- * - Inherits scope, principal, and session_id from the original (unless overridden)
- * - Starts with an empty chain (hop 0)
- *
- * Use this when:
- * - max_hops is exhausted and the task must continue
- * - Scope needs to expand (new tools, new resources)
- * - A high-risk action requires fresh human confirmation
- * - The session token is approaching expiry
+ * The superseding record has a new token_id and timestamps, inherits the
+ * session, principal, and scope unless overridden, and starts with an empty
+ * chain. Supersession adds a record; it does not revoke or invalidate the
+ * original token.
  */
-export async function issueReAuthToken(opts: ReAuthOptions): Promise<ReAuthToken> {
+export async function issueSupersedingToken(opts: SupersedingTokenOptions): Promise<SupersedingToken> {
   const { original, signingKey, keyId } = opts
   const sessionId = opts.sessionId ?? original.header.session_id
   const principal = opts.principal ?? original.principal
@@ -60,8 +43,7 @@ export async function issueReAuthToken(opts: ReAuthOptions): Promise<ReAuthToken
     .expiresInMs(opts.expiresInMs ?? 24 * 60 * 60 * 1000)
     .build()
 
-  // Attach parent_token_id before signing so it's covered by the root signature
-  const unsignedWithParent = {
+  const unsignedWithParent: UnsignedToken = {
     ...unsigned,
     header: {
       ...unsigned.header,
@@ -69,6 +51,15 @@ export async function issueReAuthToken(opts: ReAuthOptions): Promise<ReAuthToken
     },
   }
 
-  const signature = await signRoot(unsignedWithParent as any, signingKey, keyId)
-  return { ...unsignedWithParent, signature } as ReAuthToken
+  const signature = await signRoot(unsignedWithParent, signingKey, keyId)
+  return { ...unsignedWithParent, signature } as SupersedingToken
 }
+
+/** @deprecated Use SupersedingTokenOptions. */
+export type ReAuthOptions = SupersedingTokenOptions
+
+/** @deprecated Use SupersedingToken. */
+export type ReAuthToken = SupersedingToken
+
+/** @deprecated Use issueSupersedingToken. */
+export const issueReAuthToken: typeof issueSupersedingToken = issueSupersedingToken

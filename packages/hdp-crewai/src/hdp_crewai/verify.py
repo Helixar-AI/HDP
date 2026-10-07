@@ -1,33 +1,282 @@
-"""Offline chain verification utilities for HDP tokens.
-
-Design consideration #4: Verification Endpoint
-Enables downstream systems to validate a complete delegation chain using
-only the issuer's public key. Returns a structured result with validity
-status, per-hop outcomes, violations, and depth metrics.
-
-Usage:
-    from hdp_crewai import verify_chain
-
-    result = verify_chain(token_dict, public_key_bytes)
-    if result.valid:
-        print(f"Chain verified: {result.hop_count} hops")
-    else:
-        print(f"Violations: {result.violations}")
-"""
+"""Offline, time-independent verification for HDP records."""
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
+import json
+import math
+import re
+from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from ._crypto import verify_hop, verify_root
 
+_MAX_SAFE_INTEGER = 9_007_199_254_740_991
+_PRINCIPAL_ID_TYPES = {"opaque", "email", "uuid", "did", "poh"}
+_DATA_CLASSIFICATIONS = {"public", "internal", "confidential", "restricted"}
+
+
+def _validate_json_value(value: object, path: str = "token") -> str | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        try:
+            if math.isfinite(float(value)) and int(float(value)) == value:
+                return None
+        except (OverflowError, ValueError):
+            pass
+        return f"{path} integer must be exactly representable as an IEEE 754 number"
+    if isinstance(value, float):
+        return None if math.isfinite(value) else f"{path} must not contain non-finite numbers"
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return f"{path} contains invalid Unicode"
+        return None
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            error = _validate_json_value(item, f"{path}[{index}]")
+            if error:
+                return error
+        return None
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                return f"{path} object keys must be strings"
+            error = _validate_json_value(key, f"{path} key")
+            if error:
+                return error
+            error = _validate_json_value(item, f"{path}.{key}")
+            if error:
+                return error
+        return None
+    return f"{path} contains a value that is not JSON"
+
+
+def _object_from_pairs(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object member {key!r}")
+        result[key] = value
+    return result
+
+
+def _reject_non_finite_number(value: str) -> None:
+    raise ValueError(f"non-finite JSON number {value}")
+
+
+def _parse_token_input(token: object) -> tuple[object, str | None]:
+    if not isinstance(token, str):
+        return token, None
+    try:
+        return json.loads(
+            token,
+            object_pairs_hook=_object_from_pairs,
+            parse_constant=_reject_non_finite_number,
+        ), None
+    except ValueError as exc:
+        return None, str(exc)
+
+
+def _validate_token_input(token: object) -> str | None:
+    if not isinstance(token, dict):
+        return "token must be a dictionary"
+    json_error = _validate_json_value(token)
+    if json_error:
+        return json_error
+    if set(token) != {"hdp", "header", "principal", "scope", "chain", "signature"}:
+        return "token must contain exactly the six defined top-level fields"
+    if not isinstance(token.get("hdp"), str):
+        return "token.hdp must be a string"
+
+    header = token.get("header")
+    principal = token.get("principal")
+    scope = token.get("scope")
+    chain = token.get("chain")
+    if not isinstance(header, dict):
+        return "token.header must be a dictionary"
+    signature = token.get("signature")
+    if not isinstance(signature, dict):
+        return "token.signature must be a dictionary"
+    for field_name in ("alg", "kid", "value"):
+        if not isinstance(signature.get(field_name), str):
+            return f"signature.{field_name} must be a string"
+    if not signature["kid"]:
+        return "signature.kid must not be empty"
+    if re.fullmatch(r"[A-Za-z0-9_-]{86}", signature["value"]) is None:
+        return "signature.value must be an 86-character base64url string"
+    if "signed_fields" in signature and (
+        signature["signed_fields"] != ["header", "principal", "scope"]
+    ):
+        return "signature.signed_fields must be [header, principal, scope]"
+    if not isinstance(principal, dict):
+        return "token.principal must be a dictionary"
+    if not isinstance(scope, dict):
+        return "token.scope must be a dictionary"
+    if not isinstance(chain, list) or any(not isinstance(hop, dict) for hop in chain):
+        return "token.chain must be a list of dictionaries"
+
+    token_id = header.get("token_id")
+    if not isinstance(token_id, str):
+        return "header.token_id must be a version 4 UUID"
+    try:
+        parsed_token_id = UUID(token_id)
+    except ValueError:
+        return "header.token_id must be a version 4 UUID"
+    if parsed_token_id.version != 4 or str(parsed_token_id) != token_id.lower():
+        return "header.token_id must be a version 4 UUID"
+
+    for field_name in ("issued_at", "expires_at"):
+        value = header.get(field_name)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            or value > _MAX_SAFE_INTEGER
+        ):
+            return f"header.{field_name} must be an integer from 0 to {_MAX_SAFE_INTEGER}"
+    if header["expires_at"] <= header["issued_at"]:
+        return "header.expires_at must be greater than header.issued_at"
+    if not isinstance(header.get("session_id"), str) or not header["session_id"]:
+        return "header.session_id must be a non-empty string"
+    if not isinstance(header.get("version"), str):
+        return "header.version must be a string"
+    if "parent_token_id" in header:
+        parent_token_id = header["parent_token_id"]
+        if not isinstance(parent_token_id, str):
+            return "header.parent_token_id must be a UUID string"
+        try:
+            parsed_parent_token_id = UUID(parent_token_id)
+        except ValueError:
+            return "header.parent_token_id must be a UUID string"
+        if str(parsed_parent_token_id) != parent_token_id.lower():
+            return "header.parent_token_id must be a UUID string"
+
+    if not isinstance(principal.get("id"), str):
+        return "principal.id must be a string"
+    id_type = principal.get("id_type")
+    if not isinstance(id_type, str) or (
+        id_type not in _PRINCIPAL_ID_TYPES
+        and re.fullmatch(r"x-[^\r\n\u2028\u2029]+", id_type) is None
+    ):
+        return "principal.id_type must be a defined value or match 'x-...'"
+    for field_name in ("poh_credential", "display_name"):
+        if field_name in principal and not isinstance(principal[field_name], str):
+            return f"principal.{field_name} must be a string"
+    if "metadata" in principal and not isinstance(principal["metadata"], dict):
+        return "principal.metadata must be an object"
+
+    if not isinstance(scope.get("intent"), str):
+        return "scope.intent must be a string"
+    for field_name in ("authorized_tools", "authorized_resources"):
+        values = scope.get(field_name)
+        if field_name in scope and (
+            not isinstance(values, list) or any(not isinstance(value, str) for value in values)
+        ):
+            return f"scope.{field_name} must be a list of strings"
+    classification = scope.get("data_classification")
+    if not isinstance(classification, str) or classification not in _DATA_CLASSIFICATIONS:
+        return "scope.data_classification must be a defined classification"
+    for field_name in ("network_egress", "persistence"):
+        if not isinstance(scope.get(field_name), bool):
+            return f"scope.{field_name} must be a boolean"
+    if "max_hops" in scope:
+        max_hops = scope["max_hops"]
+        if (
+            not isinstance(max_hops, int)
+            or isinstance(max_hops, bool)
+            or max_hops < 1
+            or max_hops > _MAX_SAFE_INTEGER
+        ):
+            return f"scope.max_hops must be a positive integer up to {_MAX_SAFE_INTEGER}"
+
+    if "constraints" in scope and not isinstance(scope["constraints"], list):
+        return "scope.constraints must be an array"
+    if "extensions" in scope and not isinstance(scope["extensions"], dict):
+        return "scope.extensions must be an object"
+
+    for index, hop in enumerate(chain):
+        seq = hop.get("seq")
+        if (
+            not isinstance(seq, int)
+            or isinstance(seq, bool)
+            or seq < 1
+            or seq > _MAX_SAFE_INTEGER
+        ):
+            return f"chain[{index}].seq must be a positive integer up to {_MAX_SAFE_INTEGER}"
+        for field_name in ("agent_id", "agent_type", "action_summary"):
+            if not isinstance(hop.get(field_name), str):
+                return f"chain[{index}].{field_name} must be a string"
+        if "agent_fingerprint" in hop and not isinstance(hop["agent_fingerprint"], str):
+            return f"chain[{index}].agent_fingerprint must be a string"
+        hop_signature = hop.get("hop_signature")
+        if not isinstance(hop_signature, str) or re.fullmatch(
+            r"[A-Za-z0-9_-]{86}", hop_signature
+        ) is None:
+            return f"chain[{index}].hop_signature must be an 86-character base64url string"
+        for field_name in ("timestamp", "parent_hop"):
+            value = hop.get(field_name)
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 0
+                or value > _MAX_SAFE_INTEGER
+            ):
+                return f"chain[{index}].{field_name} must be an integer from 0 to {_MAX_SAFE_INTEGER}"
+
+    return None
+
+
+def _validate_root_token_config(
+    principal: object,
+    scope: object,
+    expires_in_ms: object,
+    issued_at_ms: int,
+    key_id: str = "configuration-check",
+    session_id: str = "configuration-check",
+) -> str | None:
+    if (
+        isinstance(expires_in_ms, bool)
+        or not isinstance(expires_in_ms, int)
+        or expires_in_ms <= 0
+    ):
+        return "expires_in_ms must be a positive integer"
+    if (
+        isinstance(issued_at_ms, bool)
+        or not isinstance(issued_at_ms, int)
+        or issued_at_ms < 0
+        or issued_at_ms > _MAX_SAFE_INTEGER
+    ):
+        return f"header.issued_at must be an integer from 0 to {_MAX_SAFE_INTEGER}"
+
+    expires_at_ms = issued_at_ms + expires_in_ms
+    if expires_at_ms <= issued_at_ms or expires_at_ms > _MAX_SAFE_INTEGER:
+        return "expires_in_ms must produce an expires_at within Section 3 integer bounds"
+
+    candidate = {
+        "hdp": "0.1",
+        "header": {
+            "token_id": "00000000-0000-4000-8000-000000000000",
+            "issued_at": issued_at_ms,
+            "expires_at": expires_at_ms,
+            "session_id": session_id,
+            "version": "0.1",
+        },
+        "principal": principal,
+        "scope": scope,
+        "chain": [],
+        "signature": {"alg": "Ed25519", "kid": key_id, "value": "A" * 86},
+    }
+    return _validate_token_input(candidate)
+
 
 @dataclass
 class HopVerification:
-    """Per-hop verification outcome."""
+    """Per-hop signature verification outcome."""
+
     seq: int
     agent_id: str
     valid: bool
@@ -36,106 +285,152 @@ class HopVerification:
 
 @dataclass
 class VerificationResult:
-    """Result of verifying an HDP token's complete delegation chain."""
+    """Integrity result and separate recording-period audit result."""
+
     valid: bool
     token_id: str
     session_id: str
     hop_count: int
     hop_results: list[HopVerification] = field(default_factory=list)
     violations: list[str] = field(default_factory=list)
+    recorded_after_period: list[int] = field(default_factory=list)
 
     @property
     def depth(self) -> int:
         return self.hop_count
 
 
-def verify_chain(token: dict, public_key: Ed25519PublicKey | bytes) -> VerificationResult:
-    """Verify a complete HDP token — root signature and every hop in the chain.
+def verify_chain(token: dict | str, public_key: Ed25519PublicKey | bytes) -> VerificationResult:
+    """Verify a record without time or session state.
 
-    Args:
-        token:      A token dict as returned by ``HdpMiddleware.export_token()``.
-        public_key: The human's Ed25519 public key. Pass either an
-                    ``Ed25519PublicKey`` instance or the raw 32-byte public key
-                    bytes (as produced by ``Ed25519PrivateKey.public_key().public_bytes_raw()``).
-
-    Returns:
-        VerificationResult with ``valid=True`` only if every signature checks out
-        and no structural violations are detected.
+    String input is parsed with duplicate-member detection. For dictionary input,
+    duplicate detection remains the responsibility of the caller's parser.
     """
+    token, parse_error = _parse_token_input(token)
+    input_error = parse_error or _validate_token_input(token)
+    if input_error is not None:
+        input_header = token.get("header") if isinstance(token, dict) else None
+        input_chain = token.get("chain") if isinstance(token, dict) else None
+        input_token_id = input_header.get("token_id") if isinstance(input_header, dict) else None
+        input_session_id = input_header.get("session_id") if isinstance(input_header, dict) else None
+        return VerificationResult(
+            valid=False,
+            token_id=input_token_id if isinstance(input_token_id, str) else "unknown",
+            session_id=input_session_id if isinstance(input_session_id, str) else "unknown",
+            hop_count=len(input_chain) if isinstance(input_chain, list) else 0,
+            hop_results=[],
+            violations=[f"Step 0: Input validation failed: {input_error}"],
+            recorded_after_period=[],
+        )
+    header = token["header"]
+    chain = token["chain"]
+    scope = token["scope"]
+    expires_at = header["expires_at"]
+    max_hops = scope.get("max_hops")
+
     if isinstance(public_key, (bytes, bytearray)):
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey as _PK
-        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-        # Accept raw 32-byte public key
-        pub = _load_raw_public_key(public_key)
+        pub = _load_raw_public_key(bytes(public_key))
     else:
         pub = public_key
 
-    token_id = token.get("header", {}).get("token_id", "unknown")
-    session_id = token.get("header", {}).get("session_id", "unknown")
-    chain: list[dict] = token.get("chain", [])
+    token_id = header.get("token_id", "unknown")
+    session_id = header.get("session_id", "unknown")
+    recorded_after_period = [
+        hop["seq"]
+        for hop in chain
+        if isinstance(hop.get("seq"), int)
+        and not isinstance(hop.get("seq"), bool)
+        and isinstance(hop.get("timestamp"), int)
+        and not isinstance(hop.get("timestamp"), bool)
+        and hop["timestamp"] >= expires_at
+    ]
     violations: list[str] = []
     hop_results: list[HopVerification] = []
 
-    # 1. Verify root signature
-    if not verify_root(token, pub):
-        violations.append("Root signature invalid")
+    def result(valid: bool) -> VerificationResult:
         return VerificationResult(
-            valid=False,
+            valid=valid,
             token_id=token_id,
             session_id=session_id,
             hop_count=len(chain),
+            hop_results=hop_results,
             violations=violations,
+            recorded_after_period=recorded_after_period,
         )
 
-    # 2. Check token expiry
-    expires_at = token.get("header", {}).get("expires_at", 0)
-    now_ms = int(time.time() * 1000)
-    if expires_at and now_ms > expires_at:
-        violations.append(f"Token expired at {expires_at}")
+    # Step 1: protocol and header versions.
+    version = token.get("hdp")
+    if version != "0.1":
+        violations.append(f"Step 1: unsupported HDP version {version!r}")
+        return result(False)
+    if header.get("version") != version:
+        violations.append("Step 1: header.version does not match hdp")
+        return result(False)
 
-    # 3. Check max_hops
-    max_hops = token.get("scope", {}).get("max_hops")
+    # Step 2: root signature.
+    if not verify_root(token, pub):
+        violations.append("Step 2: Root signature invalid")
+        return result(False)
+
+    # Step 3: sequence, parent references, and monotonic hop timestamps.
+    previous_timestamp: int | None = None
+    for index, hop in enumerate(chain):
+        expected_seq = index + 1
+        seq = hop.get("seq")
+        if seq != expected_seq:
+            violations.append(
+                f"Step 3: non-sequential seq at position {index}: "
+                f"expected {expected_seq}, got {seq!r}"
+            )
+            return result(False)
+
+        parent_hop = hop.get("parent_hop")
+        if (
+            not isinstance(parent_hop, int)
+            or isinstance(parent_hop, bool)
+            or parent_hop < 0
+            or parent_hop >= expected_seq
+        ):
+            violations.append(f"Step 3: invalid parent_hop at hop {expected_seq}")
+            return result(False)
+
+        timestamp = hop.get("timestamp")
+        if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+            violations.append(f"Step 3: invalid timestamp at hop {expected_seq}")
+            return result(False)
+        if previous_timestamp is not None and timestamp < previous_timestamp:
+            violations.append(f"Step 3: timestamp decreases at hop {expected_seq}")
+            return result(False)
+        previous_timestamp = timestamp
+
+    # Step 4: cumulative hop signatures.
+    root_sig_value = token["signature"]["value"]
+    for index, hop in enumerate(chain):
+        seq = hop.get("seq", index + 1)
+        agent_id = hop.get("agent_id", "unknown")
+        hop_sig = hop.get("hop_signature")
+        if not isinstance(hop_sig, str) or not hop_sig:
+            reason = "Hop signature missing"
+            hop_results.append(HopVerification(seq, agent_id, False, reason))
+            violations.append(f"Step 4: hop {seq} has no hop_signature")
+            return result(False)
+
+        unsigned_hop = {key: value for key, value in hop.items() if key != "hop_signature"}
+        cumulative = [*chain[:index], unsigned_hop]
+        if not verify_hop(cumulative, root_sig_value, hop_sig, pub):
+            reason = "Hop signature invalid"
+            hop_results.append(HopVerification(seq, agent_id, False, reason))
+            violations.append(f"Step 4: hop {seq} ({agent_id}) signature invalid")
+            return result(False)
+        hop_results.append(HopVerification(seq, agent_id, True))
+
+    # Step 5: recorded depth.
     if max_hops is not None and len(chain) > max_hops:
-        violations.append(f"Chain depth {len(chain)} exceeds max_hops {max_hops}")
+        violations.append(f"Step 5: chain depth {len(chain)} exceeds max_hops {max_hops}")
+        return result(False)
 
-    # 4. Verify each hop signature over the cumulative chain
-    root_sig_value: str = token["signature"]["value"]
-    for i, hop in enumerate(chain):
-        hop_sig = hop.get("hop_signature", "")
-        unsigned_hop = {k: v for k, v in hop.items() if k != "hop_signature"}
-        # Cumulative = all hops up to and including this one (unsigned version of current)
-        prior_signed = chain[:i]
-        cumulative = [*prior_signed, unsigned_hop]
-
-        ok = verify_hop(cumulative, root_sig_value, hop_sig, pub)
-        hop_results.append(HopVerification(
-            seq=hop.get("seq", i + 1),
-            agent_id=hop.get("agent_id", "unknown"),
-            valid=ok,
-            reason="" if ok else "Hop signature invalid",
-        ))
-        if not ok:
-            violations.append(f"Hop {hop.get('seq', i + 1)} ({hop.get('agent_id', '?')}) signature invalid")
-
-    # 5. Check sequential seq numbers
-    for j, hop in enumerate(chain):
-        if hop.get("seq") != j + 1:
-            violations.append(f"Non-sequential seq at position {j}: expected {j + 1}, got {hop.get('seq')}")
-
-    valid = len(violations) == 0
-    return VerificationResult(
-        valid=valid,
-        token_id=token_id,
-        session_id=session_id,
-        hop_count=len(chain),
-        hop_results=hop_results,
-        violations=violations,
-    )
+    return result(True)
 
 
 def _load_raw_public_key(raw_bytes: bytes) -> Ed25519PublicKey:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    # cryptography library: load from raw 32-byte key
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    import cryptography.hazmat.primitives.asymmetric.ed25519 as _ed
-    return _ed.Ed25519PublicKey.from_public_bytes(raw_bytes)
+    return Ed25519PublicKey.from_public_bytes(raw_bytes)

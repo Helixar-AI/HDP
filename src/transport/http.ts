@@ -2,9 +2,9 @@ import type { HdpToken } from '../types/token.js'
 import { HdpSchemaError } from '../types/errors.js'
 import { validateToken } from '../schema/validator.js'
 
-/** Standard HDP token header defined by draft -02. */
+/** Standard HDP token header defined by draft -03. */
 export const HDP_HEADER = 'HDP-Token'
-/** Standard HDP token-reference header defined by draft -02. */
+/** Standard HDP token-reference header defined by draft -03. */
 export const HDP_REF_HEADER = 'HDP-Token-Ref'
 
 /**
@@ -35,13 +35,18 @@ export function decodeHeader(value: string): HdpToken {
     }
 
     const json = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    assertNoDuplicateObjectNames(json)
-    const token: unknown = JSON.parse(json)
-    validateToken(token)
-    return token as HdpToken
+    return parseTokenJson(json)
   } catch (e) {
     throw new HdpSchemaError(`Failed to decode ${HDP_HEADER} header: ${(e as Error).message}`)
   }
+}
+
+/** Parse and validate serialized token JSON, rejecting duplicate names before JSON.parse. */
+export function parseTokenJson(json: string): HdpToken {
+  assertNoDuplicateObjectNames(json)
+  const token: unknown = JSON.parse(json)
+  validateToken(token)
+  return token as HdpToken
 }
 
 /** Detect duplicate JSON object names before JSON.parse can discard them. */

@@ -1,9 +1,8 @@
 """HdpMiddleware — non-blocking HDP audit trail for CrewAI crews.
 
 Design considerations implemented:
-  #1 Scope enforcement: on_step() inspects AgentAction.tool against authorized_tools.
-     In strict mode raises HDPScopeViolationError; otherwise logs and records violation.
-  #2 Delegation depth limits: max_hops is enforced in on_task_end().
+  #1 Scope observation: on_step() records out-of-scope AgentAction.tool values.
+  #2 Recording depth: chain extension stops at max_hops.
   #3 Token size / performance: non-blocking throughout; Ed25519 = 64 bytes/hop.
   #4 Verification: see hdp_crewai.verify.verify_chain().
   #5 Memory integration: after_kickoff() persists the token to crewAI's storage path.
@@ -31,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import logging
 import time
@@ -40,12 +40,13 @@ from typing import Any, Optional
 
 from ._crypto import sign_hop, sign_root
 from ._types import HdpPrincipal, DataClassification
+from .verify import _validate_root_token_config, _validate_token_input
 
 logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -93,14 +94,13 @@ class ScopePolicy:
 
 
 class HdpMiddleware:
-    """Non-blocking HDP middleware for CrewAI.
+    """Record HDP provenance for CrewAI without gating crew actions.
 
     Hooks into CrewAI's before_kickoff_callbacks, step_callback, task_callback,
     and after_kickoff_callbacks to build a tamper-evident delegation chain.
 
-    All HDP operations are non-blocking by default: failures are logged as
-    warnings and crew execution continues unaffected. Set ``strict=True`` to
-    have scope violations raise HDPScopeViolationError and halt the crew.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -114,16 +114,28 @@ class HdpMiddleware:
         strict: bool = False,
         persist_token: bool = True,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         self._signing_key = signing_key
         self._session_id = session_id
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._persist_token = persist_token
         self._token: Optional[dict] = None
         self._hop_seq = 0
+        try:
+            input_error = _validate_root_token_config(
+                self._build_principal_dict(),
+                self._scope.to_dict(),
+                self._expires_in_ms,
+                int(time.time() * 1000),
+            )
+        except Exception as exc:
+            raise ValueError("principal and scope configuration is invalid") from exc
+        if input_error is not None:
+            raise ValueError(input_error)
 
     # ------------------------------------------------------------------
     # CrewAI callback entry points
@@ -131,6 +143,8 @@ class HdpMiddleware:
 
     def before_kickoff(self, inputs: Optional[dict] = None) -> None:
         """Issues the HDP root token. Wired to before_kickoff_callbacks."""
+        self._token = None
+        self._hop_seq = 0
         try:
             now = int(time.time() * 1000)
             unsigned: dict = {
@@ -146,21 +160,28 @@ class HdpMiddleware:
                 "scope": self._scope.to_dict(),
                 "chain": [],
             }
+            candidate = {
+                **unsigned,
+                "signature": {"alg": "Ed25519", "kid": self._key_id, "value": "A" * 86},
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
             signature = sign_root(unsigned, self._signing_key, self._key_id)
             self._token = {**unsigned, "signature": signature}
             logger.debug("HDP root token issued: %s", self._token["header"]["token_id"])
-        except Exception as exc:
-            logger.warning("HDP before_kickoff failed (non-blocking): %s", exc)
+        except Exception:
+            self._token = None
+            self._hop_seq = 0
+            logger.warning("HDP root record issuance failed; action continues")
 
     def on_step(self, step_output: Any) -> None:
-        """Design consideration #1 — Scope enforcement.
+        """Record an out-of-scope tool attempt after the agent step.
 
         Called after each agent step via step_callback. Inspects AgentAction.tool
         against scope.authorized_tools.
 
-        - strict=False (default): logs a warning and appends a signed hop that
-          identifies the attempted out-of-scope action.
-        - strict=True: raises HDPScopeViolationError, halting the crew.
+        An out-of-scope tool is logged and appended as a signed hop.
         """
         # Only check AgentAction objects (not AgentFinish)
         tool = getattr(step_output, "tool", None)
@@ -169,57 +190,30 @@ class HdpMiddleware:
 
         authorized = self._scope.authorized_tools
         if authorized is not None and tool not in authorized:
-            if self._strict:
-                raise HDPScopeViolationError(tool, authorized)
-
             logger.warning(
                 "HDP scope violation: tool '%s' not in authorized_tools %s",
                 tool,
                 authorized,
             )
-            self._record_scope_violation(tool)
+            try:
+                self._record_scope_violation(tool)
+            except Exception:
+                logger.warning("HDP audit record append failed; action continues")
 
     def on_task_end(self, task_output: Any) -> None:
-        """Design consideration #2 — Delegation depth.
+        """Record a task-end hop when the chain has remaining capacity.
 
-        Extends the delegation chain after each task. Wired to task_callback.
-        Enforces max_hops — hops beyond the limit are skipped and logged.
+        Extends the delegation chain after each task. A full chain is not extended.
+        CrewAI task execution is unaffected.
         """
         if self._token is None:
             return
         try:
-            max_hops = self._scope.max_hops
-            if max_hops is not None and self._hop_seq >= max_hops:
-                logger.warning(
-                    "HDP max_hops (%d) reached — skipping hop for agent '%s'",
-                    max_hops,
-                    getattr(task_output, "agent", "unknown"),
-                )
-                return
-
-            self._hop_seq += 1
             agent_id: str = getattr(task_output, "agent", "unknown-agent")
             raw_output: str = str(getattr(task_output, "raw", task_output))
-            action_summary = raw_output[:200]
-
-            unsigned_hop: dict = {
-                "seq": self._hop_seq,
-                "agent_id": agent_id,
-                "agent_type": "sub-agent",
-                "timestamp": int(time.time() * 1000),
-                "action_summary": action_summary,
-                "parent_hop": self._hop_seq - 1,
-            }
-
-            current_chain: list = self._token.get("chain", [])
-            cumulative = [*current_chain, unsigned_hop]
-            hop_sig = sign_hop(cumulative, self._token["signature"]["value"], self._signing_key)
-
-            signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
-            self._token = {**self._token, "chain": [*current_chain, signed_hop]}
-            logger.debug("HDP hop %d recorded for agent '%s'", self._hop_seq, agent_id)
-        except Exception as exc:
-            logger.warning("HDP on_task_end failed (non-blocking): %s", exc)
+            self._append_hop(agent_id, raw_output[:200], "sub-agent")
+        except Exception:
+            logger.warning("HDP audit record append failed; action continues")
 
     def after_kickoff(self, output: Any = None) -> Any:
         """Design considerations #3 + #5 — Performance + Memory integration.
@@ -238,8 +232,8 @@ class HdpMiddleware:
                 )
                 if self._persist_token:
                     self._save_token_to_storage()
-        except Exception as exc:
-            logger.warning("HDP after_kickoff failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP token persistence failed; action continues")
         # after_kickoff_callbacks must return the output unchanged
         return output
 
@@ -265,7 +259,7 @@ class HdpMiddleware:
             self.after_kickoff,
         ]
 
-        # Wrap step_callback (scope enforcement — design consideration #1)
+        # Wrap step_callback for scope observation.
         existing_step_cb = getattr(crew, "step_callback", None)
         if existing_step_cb is not None:
             def _chained_step(step_output: Any) -> None:
@@ -290,8 +284,8 @@ class HdpMiddleware:
     # ------------------------------------------------------------------
 
     def export_token(self) -> Optional[dict]:
-        """Return the current token dict, or None if kickoff hasn't run."""
-        return self._token
+        """Return a defensive copy of the current token, if kickoff has run."""
+        return deepcopy(self._token)
 
     def export_token_json(self, indent: int = 2) -> Optional[str]:
         """Return the token as a JSON string, or None if kickoff hasn't run."""
@@ -313,24 +307,50 @@ class HdpMiddleware:
 
     def _record_scope_violation(self, tool: str) -> None:
         """Append a signed hop describing an out-of-scope attempt."""
-        if self._token is None:
-            return
-        max_hops = self._scope.max_hops
-        if max_hops is not None and self._hop_seq >= max_hops:
-            logger.warning("HDP max_hops (%d) reached; violation hop could not be appended", max_hops)
-            return
-        self._hop_seq += 1
-        unsigned_hop = {
-            "seq": self._hop_seq,
-            "agent_id": tool,
-            "agent_type": "tool-executor",
-            "timestamp": int(time.time() * 1000),
-            "action_summary": f"attempted out-of-scope tool call: {tool}",
-            "parent_hop": self._hop_seq - 1,
-        }
-        current_chain = self._token.get("chain", [])
-        hop_sig = sign_hop([*current_chain, unsigned_hop], self._token["signature"]["value"], self._signing_key)
-        self._token = {**self._token, "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}]}
+        self._append_hop(tool, f"attempted out-of-scope tool call: {tool}", "tool-executor")
+
+    def _append_hop(self, agent_id: str, action_summary: str, agent_type: str) -> None:
+        """Append one validated audit hop without affecting the action."""
+        try:
+            if self._token is None:
+                return
+            max_hops = self._scope.max_hops
+            if max_hops is not None and self._hop_seq >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; hop was not recorded", max_hops)
+                return
+            input_error = _validate_token_input(self._token)
+            if input_error is not None:
+                raise ValueError(input_error)
+            next_seq = self._hop_seq + 1
+            unsigned_hop = {
+                "seq": next_seq,
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "timestamp": int(time.time() * 1000),
+                "action_summary": action_summary,
+                "parent_hop": next_seq - 1,
+            }
+            current_chain = self._token.get("chain", [])
+            candidate = {
+                **self._token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": "A" * 86}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+            hop_sig = sign_hop(
+                [*current_chain, unsigned_hop],
+                self._token["signature"]["value"],
+                self._signing_key,
+            )
+            self._token = {
+                **self._token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": hop_sig}],
+            }
+            self._hop_seq = next_seq
+            logger.debug("HDP hop %d recorded", next_seq)
+        except Exception:
+            logger.warning("HDP audit record append failed; action continues")
 
     def _save_token_to_storage(self) -> None:
         """Design consideration #5 — persist token to crewAI's storage directory.
@@ -351,5 +371,5 @@ class HdpMiddleware:
             output_path = storage_dir / f"hdp_token_{token_id}.json"
             output_path.write_text(json.dumps(self._token, indent=2))
             logger.debug("HDP token persisted to %s", output_path)
-        except Exception as exc:
-            logger.warning("HDP token persistence failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP token persistence failed; action continues")

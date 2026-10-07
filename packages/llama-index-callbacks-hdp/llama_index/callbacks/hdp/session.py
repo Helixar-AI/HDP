@@ -8,6 +8,7 @@ copy, preventing cross-request token leakage.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from contextvars import ContextVar
 from typing import Optional
 
@@ -15,13 +16,13 @@ _hdp_token: ContextVar[Optional[dict]] = ContextVar("_hdp_token", default=None)
 
 
 def get_token() -> Optional[dict]:
-    """Return the active HDP token dict, or None if no query is in progress."""
-    return _hdp_token.get()
+    """Return a defensive copy of the active token, if a query is in progress."""
+    return deepcopy(_hdp_token.get())
 
 
 def set_token(token: dict) -> None:
     """Store a token dict as the active HDP token for the current context."""
-    _hdp_token.set(token)
+    _hdp_token.set(deepcopy(token))
 
 
 def clear_token() -> None:

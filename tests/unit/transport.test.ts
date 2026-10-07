@@ -9,6 +9,7 @@ import {
 } from '../../src/transport/http.js'
 import { InMemoryTokenStore } from '../../src/transport/store.js'
 import { contentAddressedReference, storeToken, resolveToken } from '../../src/transport/reference.js'
+import { verifyToken } from '../../src/token/verifier.js'
 import type { HdpToken } from '../../src/types/token.js'
 
 const fakeToken: HdpToken = {
@@ -27,7 +28,7 @@ const fakeToken: HdpToken = {
 }
 
 describe('HTTP transport', () => {
-  it('advertises the standard draft -02 header names and labels X names as legacy', () => {
+  it('advertises the standard draft -03 header names and labels X names as legacy', () => {
     expect(HDP_HEADER).toBe('HDP-Token')
     expect(HDP_REF_HEADER).toBe('HDP-Token-Ref')
     expect(HDP_LEGACY_HEADER).toBe('X-HDP-Token')
@@ -62,10 +63,14 @@ describe('HTTP transport', () => {
     expect(() => decodeHeader(encoded)).toThrow('invalid Unicode')
   })
 
-  it('decodeHeader validates the decoded token schema', () => {
+  it('decodes an unknown version and reports it during integrity verification', async () => {
     const json = JSON.stringify({ ...fakeToken, hdp: '9.9' })
     const encoded = Buffer.from(json, 'utf8').toString('base64url')
-    expect(() => decodeHeader(encoded)).toThrow()
+    const decoded = decodeHeader(encoded)
+    const result = await verifyToken(decoded, { publicKey: new Uint8Array(32) })
+
+    expect(decoded.hdp).toBe('9.9')
+    expect(result).toMatchObject({ valid: false, failedStep: 1, error: { code: 'UNSUPPORTED_VERSION' } })
   })
 })
 

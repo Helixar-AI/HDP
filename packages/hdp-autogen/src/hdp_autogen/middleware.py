@@ -1,9 +1,8 @@
 """HdpMiddleware — non-blocking HDP audit trail for AutoGen agents.
 
 Design considerations implemented:
-  #1 Scope enforcement: _on_message_receive() inspects tool calls against authorized_tools.
-     In strict mode raises HDPScopeViolationError; otherwise logs and records violation.
-  #2 Delegation depth limits: max_hops is enforced in _extend_chain().
+  #1 Scope observation: _on_message_receive() records out-of-scope tool calls.
+  #2 Recording depth: chain extension stops at max_hops.
   #3 Token size / performance: non-blocking throughout; Ed25519 = 64 bytes/hop.
   #4 Verification: see hdp_autogen.verify.verify_chain().
   #5 GroupChat integration: configure() hooks into GroupChatManager and ConversableAgent.
@@ -34,6 +33,7 @@ Usage:
 
 from __future__ import annotations
 
+from copy import deepcopy
 import functools
 import json
 import logging
@@ -43,12 +43,13 @@ from typing import Any, Optional
 
 from ._crypto import sign_hop, sign_root
 from ._types import HdpPrincipal, DataClassification
+from .verify import _validate_root_token_config, _validate_token_input
 
 logger = logging.getLogger(__name__)
 
 
 class HDPScopeViolationError(Exception):
-    """Raised when an agent attempts to use a tool outside the authorized scope."""
+    """Deprecated. Kept importable for compatibility and never raised."""
 
     def __init__(self, tool: str, authorized_tools: list[str]) -> None:
         self.tool = tool
@@ -96,14 +97,13 @@ class ScopePolicy:
 
 
 class HdpMiddleware:
-    """Non-blocking HDP middleware for AutoGen.
+    """Record HDP provenance for AutoGen without gating agent actions.
 
     Hooks into AutoGen's ConversableAgent hooks and GroupChatManager message
     routing to build a tamper-evident delegation chain.
 
-    All HDP operations are non-blocking by default: failures are logged as
-    warnings and agent execution continues unaffected. Set ``strict=True`` to
-    have scope violations raise HDPScopeViolationError and halt the agent.
+    HDP tokens are records and cannot gate actions. ``strict=True`` is retained
+    for compatibility and raises ValueError during construction.
     """
 
     def __init__(
@@ -116,15 +116,27 @@ class HdpMiddleware:
         expires_in_ms: int = 24 * 60 * 60 * 1000,
         strict: bool = False,
     ) -> None:
+        if strict:
+            raise ValueError("HDP tokens are records and cannot gate actions")
         self._signing_key = signing_key
         self._session_id = session_id
         self._principal = principal
         self._scope = scope
         self._key_id = key_id
         self._expires_in_ms = expires_in_ms
-        self._strict = strict
         self._token: Optional[dict] = None
         self._hop_seq = 0
+        try:
+            input_error = _validate_root_token_config(
+                self._build_principal_dict(),
+                self._scope.to_dict(),
+                self._expires_in_ms,
+                int(time.time() * 1000),
+            )
+        except Exception as exc:
+            raise ValueError("principal and scope configuration is invalid") from exc
+        if input_error is not None:
+            raise ValueError(input_error)
 
     # ------------------------------------------------------------------
     # Root token issuance
@@ -132,6 +144,8 @@ class HdpMiddleware:
 
     def before_kickoff(self) -> None:
         """Issue the HDP root token. Called automatically by configure() hooks."""
+        self._token = None
+        self._hop_seq = 0
         try:
             now = int(time.time() * 1000)
             unsigned: dict = {
@@ -147,11 +161,20 @@ class HdpMiddleware:
                 "scope": self._scope.to_dict(),
                 "chain": [],
             }
+            candidate = {
+                **unsigned,
+                "signature": {"alg": "Ed25519", "kid": self._key_id, "value": "A" * 86},
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
             signature = sign_root(unsigned, self._signing_key, self._key_id)
             self._token = {**unsigned, "signature": signature}
             logger.debug("HDP root token issued: %s", self._token["header"]["token_id"])
-        except Exception as exc:
-            logger.warning("HDP before_kickoff failed (non-blocking): %s", exc)
+        except Exception:
+            self._token = None
+            self._hop_seq = 0
+            logger.warning("HDP root record issuance failed; action continues")
 
     # ------------------------------------------------------------------
     # AutoGen hook callbacks
@@ -176,34 +199,33 @@ class HdpMiddleware:
                 action_summary=content[:200],
                 agent_type="sub-agent",
             )
-        except Exception as exc:
-            logger.warning("HDP on_message_send failed (non-blocking): %s", exc)
+        except Exception:
+            logger.warning("HDP audit record append failed; message continues")
 
         return message
 
     def on_message_receive(self, sender: Any, message: Any, recipient: Any, silent: bool = False) -> Any:
-        """Hook for scope enforcement on incoming messages.
+        """Record out-of-scope tool calls found in incoming messages.
 
         Inspects tool calls in the message and validates them against
-        authorized_tools. In strict mode, raises HDPScopeViolationError.
+        authorized_tools without changing the message.
 
         Returns the message unchanged so AutoGen's hook pipeline continues.
         """
-        tools = _extract_tool_calls(message)
-        authorized = self._scope.authorized_tools
-        if authorized is None:
-            return message
-
-        for tool in tools:
-            if tool not in authorized:
-                if self._strict:
-                    raise HDPScopeViolationError(tool, authorized)
-                logger.warning(
-                    "HDP scope violation: tool '%s' not in authorized_tools %s",
-                    tool,
-                    authorized,
-                )
-                self._record_scope_violation(tool)
+        try:
+            tools = _extract_tool_calls(message)
+            authorized = self._scope.authorized_tools
+            if authorized is not None:
+                for tool in tools:
+                    if tool not in authorized:
+                        logger.warning(
+                            "HDP scope violation: tool '%s' not in authorized_tools %s",
+                            tool,
+                            authorized,
+                        )
+                        self._record_scope_violation(tool)
+        except Exception:
+            logger.warning("HDP audit record append failed; message continues")
 
         return message
 
@@ -251,8 +273,8 @@ class HdpMiddleware:
     # ------------------------------------------------------------------
 
     def export_token(self) -> Optional[dict]:
-        """Return the current token dict, or None if no token has been issued."""
-        return self._token
+        """Return a defensive copy of the current token, if one was issued."""
+        return deepcopy(self._token)
 
     def export_token_json(self, indent: int = 2) -> Optional[str]:
         """Return the token as a JSON string, or None if no token has been issued."""
@@ -323,39 +345,50 @@ class HdpMiddleware:
     # ------------------------------------------------------------------
 
     def _extend_chain(self, agent_id: str, action_summary: str, agent_type: str = "sub-agent") -> None:
-        """Append a signed hop to the delegation chain.
+        """Append a signed hop when the chain has remaining capacity.
 
-        Enforces max_hops — hops beyond the limit are skipped and logged.
+        A full chain is not extended; the AutoGen message still continues.
         """
-        if self._token is None:
-            return
+        try:
+            if self._token is None:
+                return
 
-        max_hops = self._scope.max_hops
-        if max_hops is not None and self._hop_seq >= max_hops:
-            logger.warning(
-                "HDP max_hops (%d) reached — skipping hop for agent '%s'",
-                max_hops,
-                agent_id,
-            )
-            return
+            max_hops = self._scope.max_hops
+            if max_hops is not None and self._hop_seq >= max_hops:
+                logger.warning("HDP max_hops (%d) reached; hop was not recorded", max_hops)
+                return
 
-        self._hop_seq += 1
-        unsigned_hop: dict = {
-            "seq": self._hop_seq,
-            "agent_id": agent_id,
-            "agent_type": agent_type,
-            "timestamp": int(time.time() * 1000),
-            "action_summary": action_summary,
-            "parent_hop": self._hop_seq - 1,
-        }
+            input_error = _validate_token_input(self._token)
+            if input_error is not None:
+                raise ValueError(input_error)
 
-        current_chain: list = self._token.get("chain", [])
-        cumulative = [*current_chain, unsigned_hop]
-        hop_sig = sign_hop(cumulative, self._token["signature"]["value"], self._signing_key)
+            next_seq = self._hop_seq + 1
+            unsigned_hop: dict = {
+                "seq": next_seq,
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "timestamp": int(time.time() * 1000),
+                "action_summary": action_summary,
+                "parent_hop": next_seq - 1,
+            }
 
-        signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
-        self._token = {**self._token, "chain": [*current_chain, signed_hop]}
-        logger.debug("HDP hop %d recorded for agent '%s'", self._hop_seq, agent_id)
+            current_chain: list = self._token.get("chain", [])
+            candidate = {
+                **self._token,
+                "chain": [*current_chain, {**unsigned_hop, "hop_signature": "A" * 86}],
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
+
+            cumulative = [*current_chain, unsigned_hop]
+            hop_sig = sign_hop(cumulative, self._token["signature"]["value"], self._signing_key)
+            signed_hop = {**unsigned_hop, "hop_signature": hop_sig}
+            self._token = {**self._token, "chain": [*current_chain, signed_hop]}
+            self._hop_seq = next_seq
+            logger.debug("HDP hop %d recorded for agent '%s'", next_seq, agent_id)
+        except Exception:
+            logger.warning("HDP audit record append failed; message continues")
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -4,37 +4,48 @@
  * HDP middleware for MCP (Model Context Protocol) servers.
  *
  * Usage:
- *   const handler = hdpMiddleware(myToolHandler, { hdp_required: true, onValid: (token) => auditLog(token) })
+ *   const handler = hdpMiddleware(myToolHandler, {
+ *     verify: { publicKey },
+ *     onValid: (token) => auditLog({ token_id: token.header.token_id }),
+ *   })
  *   // handler is a drop-in replacement for myToolHandler
  */
-import { verifyToken, decodeHeader, HDP_HEADER, HDP_LEGACY_HEADER } from '@helixar_ai/hdp'
-import type { HdpToken, VerificationOptions } from '@helixar_ai/hdp'
+import {
+  verifyToken,
+  decodeHeader,
+  HDP_HEADER,
+  HDP_LEGACY_HEADER,
+  HdpError,
+  HdpSchemaError,
+} from '@helixar_ai/hdp'
+import type { HdpToken, VerificationOptions, VerificationResult } from '@helixar_ai/hdp'
 
 export interface HdpMiddlewareOptions {
   /**
-   * Verification options: publicKey and currentSessionId are required.
-   * If omitted, middleware runs in pure observe mode (no verification).
+   * Verification options contain the issuer public key.
+   * If omitted, middleware decodes records without checking signatures.
    */
   verify?: VerificationOptions
 
   /**
-   * When true, requests without a valid HDP token are rejected.
-   * When false (default — observe mode), invalid/absent tokens are noted
-   * but the handler is still called.
+   * @deprecated Passing true throws because HDP records cannot gate requests.
    */
   hdp_required?: boolean
 
   /**
-   * Called when a valid HDP token is present.
+   * Called when token decoding succeeds and any configured integrity check passes.
    * Use for audit logging, telemetry, etc.
    */
   onValid?: (token: HdpToken) => void
 
   /**
-   * Called when an HDP token is present but invalid.
+   * Called when token decoding or integrity verification finds an issue.
    * Use for alerting, audit logging, etc.
    */
-  onInvalid?: (error: Error) => void
+  onInvalid?: (result: VerificationResult) => void
+
+  /** Called when the request has no HDP token. */
+  onMissing?: () => void
 }
 
 export interface McpRequest {
@@ -54,30 +65,23 @@ export interface McpResponse {
 export type McpHandler = (request: McpRequest) => Promise<McpResponse>
 
 /**
- * Wraps an MCP tool handler with HDP token inspection.
- *
- * In observe mode (default, hdp_required: false):
- *   - If a valid token is present, onValid is called
- *   - If no token or invalid token, the handler is still called
- *
- * In required mode (hdp_required: true):
- *   - Missing or invalid token returns { error: 'HDP token required' }
- *   - Valid token calls onValid then passes through to handler
+ * Wraps an MCP tool handler with record inspection. Token findings are
+ * reported to callbacks and never condition whether the handler runs.
  */
 export function hdpMiddleware(
   handler: McpHandler,
   options: HdpMiddlewareOptions = {}
 ): McpHandler {
-  const { verify, hdp_required = false, onValid, onInvalid } = options
+  const { verify, hdp_required, onValid, onInvalid, onMissing } = options
+  if (hdp_required === true) {
+    throw new Error('HDP tokens are records and cannot gate requests')
+  }
 
   return async (request: McpRequest): Promise<McpResponse> => {
     const tokenHeader = readTokenHeader(request.headers)
 
-    if (!tokenHeader) {
-      if (hdp_required) {
-        return { error: 'HDP_REQUIRED: HDP-Token header is required for this endpoint' }
-      }
-      // Observe mode: no token present, pass through
+    if (tokenHeader === undefined) {
+      notifyCallback('onMissing', onMissing)
       return handler(request)
     }
 
@@ -86,11 +90,7 @@ export function hdpMiddleware(
     try {
       token = decodeHeader(tokenHeader)
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err))
-      onInvalid?.(error)
-      if (hdp_required) {
-        return { error: `HDP_INVALID: Failed to decode token: ${error.message}` }
-      }
+      notifyCallbackResult('onInvalid', onInvalid, invalidInputResult(err))
       return handler(request)
     }
 
@@ -98,23 +98,67 @@ export function hdpMiddleware(
     if (verify) {
       const result = await verifyToken(token, verify)
       if (!result.valid) {
-        const error = result.error ?? new Error('Token verification failed')
-        onInvalid?.(error)
-        if (hdp_required) {
-          return { error: `HDP_INVALID: ${error.message}` }
-        }
+        notifyCallbackResult('onInvalid', onInvalid, result)
         return handler(request)
       }
     }
 
-    // Valid token
-    onValid?.(token)
+    // Decoded record and, if configured, integrity-verified record.
+    notifyCallbackResult('onValid', onValid, token)
     return handler(request)
   }
 }
 
+function notifyCallback(callbackName: string, callback: (() => void) | undefined): void {
+  if (!callback) return
+
+  try {
+    observeCallbackResult(callbackName, callback())
+  } catch {
+    logCallbackFailure(callbackName)
+  }
+}
+
+function notifyCallbackResult<T>(
+  callbackName: string,
+  callback: ((value: T) => void) | undefined,
+  value: T,
+): void {
+  if (!callback) return
+
+  try {
+    observeCallbackResult(callbackName, callback(value))
+  } catch {
+    logCallbackFailure(callbackName)
+  }
+}
+
+function observeCallbackResult(callbackName: string, result: unknown): void {
+  if (
+    result !== null
+    && (typeof result === 'object' || typeof result === 'function')
+    && typeof (result as { then?: unknown }).then === 'function'
+  ) {
+    void Promise.resolve(result).catch(() => logCallbackFailure(callbackName))
+  }
+}
+
+function logCallbackFailure(callbackName: string): void {
+  console.error(`HDP callback failed: ${callbackName}`)
+}
+
+function invalidInputResult(error: unknown): VerificationResult {
+  return {
+    valid: false,
+    failedStep: 0,
+    error: error instanceof HdpError
+      ? error
+      : new HdpSchemaError(error instanceof Error ? error.message : String(error)),
+  }
+}
+
 /**
- * HTTP field names are case-insensitive. Prefer the draft -02 name and only
+ * HTTP field names are case-insensitive. Prefer the standard name and only
  * fall back to the deprecated X-prefixed alias for inbound compatibility.
  */
 function readTokenHeader(headers: Record<string, string> | undefined): string | undefined {

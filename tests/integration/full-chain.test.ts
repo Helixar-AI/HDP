@@ -58,14 +58,12 @@ describe('Full Delegation Chain: Principal → Orchestrator → Sub-agent → To
     // Verify the full chain
     const result = await verifyToken(token, {
       publicKey,
-      currentSessionId: 'sess-integration-001',
     })
 
-    expect(result.valid).toBe(true)
-    expect(result.error).toBeUndefined()
+    expect(result).toEqual({ valid: true })
   })
 
-  it('fails verification when the chain would exceed max_hops', async () => {
+  it('declines to extend a full chain', async () => {
     const { privateKey } = await generateKeyPair()
     let token = await issueToken({
       sessionId: 's1',
