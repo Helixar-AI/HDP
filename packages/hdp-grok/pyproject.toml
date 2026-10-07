@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hdp-grok"
-version = "0.1.2"
+version = "0.2.0"
 description = "HDP (Human Delegation Provenance) middleware for Grok / xAI API"
 readme = "README.md"
 license = { text = "Apache-2.0" }

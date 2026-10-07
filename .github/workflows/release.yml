@@ -212,6 +212,25 @@ jobs:
           name: hdp-mcp-dist
           path: packages/hdp-mcp/dist/
 
+      - name: Prepare hdp-mcp dependency for publishing
+        working-directory: packages/hdp-mcp
+        run: |
+          HDP_VERSION="$(node -p "require('../../package.json').version")"
+          npm pkg set "dependencies.@helixar_ai/hdp=^${HDP_VERSION}"
+          node -e '
+            const manifest = require("./package.json");
+            const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+            const fileDependencies = sections.flatMap((section) =>
+              Object.entries(manifest[section] || {})
+                .filter(([, spec]) => typeof spec === "string" && spec.startsWith("file:"))
+                .map(([name, spec]) => `${section}.${name}=${spec}`)
+            );
+            if (fileDependencies.length > 0) {
+              console.error(`Cannot publish ${manifest.name} with file dependencies: ${fileDependencies.join(", ")}`);
+              process.exit(1);
+            }
+          '
+
       - name: Publish @helixar_ai/hdp-mcp
         run: cd packages/hdp-mcp && npm publish --access public
         env:
@@ -242,6 +261,25 @@ jobs:
         with:
           name: hdp-cli-dist
           path: packages/hdp-cli/dist/
+
+      - name: Prepare hdp-cli dependency for publishing
+        working-directory: packages/hdp-cli
+        run: |
+          HDP_VERSION="$(node -p "require('../../package.json').version")"
+          npm pkg set "dependencies.@helixar_ai/hdp=^${HDP_VERSION}"
+          node -e '
+            const manifest = require("./package.json");
+            const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+            const fileDependencies = sections.flatMap((section) =>
+              Object.entries(manifest[section] || {})
+                .filter(([, spec]) => typeof spec === "string" && spec.startsWith("file:"))
+                .map(([name, spec]) => `${section}.${name}=${spec}`)
+            );
+            if (fileDependencies.length > 0) {
+              console.error(`Cannot publish ${manifest.name} with file dependencies: ${fileDependencies.join(", ")}`);
+              process.exit(1);
+            }
+          '
 
       - name: Publish hdp-validate
         run: cd packages/hdp-cli && npm publish --access public
@@ -279,6 +317,25 @@ jobs:
         with:
           name: hdp-autogen-ts-dist
           path: packages/hdp-autogen-ts/dist/
+
+      - name: Prepare hdp-autogen-ts dependency for publishing
+        working-directory: packages/hdp-autogen-ts
+        run: |
+          HDP_VERSION="$(node -p "require('../../package.json').version")"
+          npm pkg set "dependencies.@helixar_ai/hdp=^${HDP_VERSION}"
+          node -e '
+            const manifest = require("./package.json");
+            const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+            const fileDependencies = sections.flatMap((section) =>
+              Object.entries(manifest[section] || {})
+                .filter(([, spec]) => typeof spec === "string" && spec.startsWith("file:"))
+                .map(([name, spec]) => `${section}.${name}=${spec}`)
+            );
+            if (fileDependencies.length > 0) {
+              console.error(`Cannot publish ${manifest.name} with file dependencies: ${fileDependencies.join(", ")}`);
+              process.exit(1);
+            }
+          '
 
       - name: Publish @helixar_ai/hdp-autogen
         run: cd packages/hdp-autogen-ts && npm publish --access public
@@ -383,6 +440,25 @@ jobs:
         with:
           name: hdp-autogen-ts-dist
           path: packages/hdp-autogen-ts/dist/
+
+      - name: Prepare hdp-autogen-ts dependency for publishing
+        working-directory: packages/hdp-autogen-ts
+        run: |
+          HDP_VERSION="$(node -p "require('../../package.json').version")"
+          npm pkg set "dependencies.@helixar_ai/hdp=^${HDP_VERSION}"
+          node -e '
+            const manifest = require("./package.json");
+            const sections = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+            const fileDependencies = sections.flatMap((section) =>
+              Object.entries(manifest[section] || {})
+                .filter(([, spec]) => typeof spec === "string" && spec.startsWith("file:"))
+                .map(([name, spec]) => `${section}.${name}=${spec}`)
+            );
+            if (fileDependencies.length > 0) {
+              console.error(`Cannot publish ${manifest.name} with file dependencies: ${fileDependencies.join(", ")}`);
+              process.exit(1);
+            }
+          '
 
       - name: Publish @helixar_ai/hdp-autogen
         run: cd packages/hdp-autogen-ts && npm publish --access public

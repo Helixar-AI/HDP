@@ -121,6 +121,10 @@ Tokens produced by `hdp-grok` use the same Ed25519 + RFC 8785 wire format as the
 
 ---
 
+## Specification
+
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
+
 ## License
 
 Apache-2.0
