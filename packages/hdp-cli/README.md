@@ -5,7 +5,7 @@ Command-line schema and structure checker for HDP v0.1 records.
 ## Usage
 
 ```sh
-npm install -g hdp-validate
+npm install -g hdp-validate@0.2.0
 hdp-validate token.json
 cat token.json | hdp-validate
 ```
@@ -22,7 +22,7 @@ HDP tokens are records, not access controls. Expiry does not make a record inval
 
 ## Specification
 
-HDP is specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03)).
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

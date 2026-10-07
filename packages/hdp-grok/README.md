@@ -5,7 +5,7 @@
 Every tool call Grok makes on behalf of a human is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-grok
+pip install hdp-grok==0.2.0
 ```
 
 ---
@@ -120,6 +120,10 @@ HDP tokens are records and cannot gate actions. Expiry does not affect `valid`; 
 Tokens produced by `hdp-grok` use the same Ed25519 + RFC 8785 wire format as the TypeScript `@helixar_ai/hdp` SDK. A token issued in Python is verifiable in TypeScript and vice versa.
 
 ---
+
+## Specification
+
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

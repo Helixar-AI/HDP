@@ -74,14 +74,14 @@ When a person delegates a task to an AI agent, and that agent delegates to anoth
 | [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen               | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows     |
 | [`hdp-langchain`](./packages/hdp-langchain)            | [PyPI](https://pypi.org/project/hdp-langchain/)              | Python     | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
 | [`llama-index-callbacks-hdp`](./packages/llama-index-callbacks-hdp) | [PyPI](https://pypi.org/project/llama-index-callbacks-hdp/) | Python | LlamaIndex | LlamaIndex integration — callback handler, instrumentation dispatcher, node postprocessor |
-| [`hdp-llamaindex`](./packages/hdp-llamaindex)          | [PyPI](https://pypi.org/project/hdp-llamaindex/)             | Python     | LlamaIndex            | Metapackage — `pip install hdp-llamaindex` for HDP-first users             |
+| [`hdp-llamaindex`](./packages/hdp-llamaindex)          | [PyPI](https://pypi.org/project/hdp-llamaindex/)             | Python     | LlamaIndex            | Metapackage; install with `pip install hdp-llamaindex==0.2.0` for HDP-first users |
 
 ## Install
 
 **TypeScript / Node.js**
 
 ```bash
-npm install @helixar_ai/hdp
+npm install @helixar_ai/hdp@0.2.0
 ```
 
 **TypeScript / Physical AI**
@@ -93,7 +93,7 @@ npm install @helixar_ai/hdp-physical
 **Python / CrewAI**
 
 ```bash
-pip install hdp-crewai
+pip install hdp-crewai==0.2.0
 ```
 
 **Python / Physical AI**
@@ -105,34 +105,79 @@ pip install hdp-physical
 **Python / Grok (xAI API)**
 
 ```bash
-pip install hdp-grok openai
+pip install hdp-grok==0.2.0 openai
 ```
 
 **Python / AutoGen**
 
 ```bash
-pip install hdp-autogen
+pip install hdp-autogen==0.2.0
 ```
 
 **Python / Microsoft agent-framework**
 
 ```bash
-pip install hdp-agent-framework agent-framework-foundry azure-identity
+pip install hdp-agent-framework==0.2.0 agent-framework-foundry azure-identity
 # Set FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL for the deployment.
 ```
 
 **Python / LangChain**
 
 ```bash
-pip install hdp-langchain
+pip install hdp-langchain==0.2.0
 ```
 
 **Python / LlamaIndex**
 
 ```bash
-pip install llama-index-callbacks-hdp
+pip install llama-index-callbacks-hdp==0.2.0
 # or, from the HDP side:
-pip install hdp-llamaindex
+pip install hdp-llamaindex==0.2.0
+```
+
+---
+
+## Upgrading from 0.1.x to 0.2.0
+
+HDP 0.2.0 follows draft -03. The token wire format remains HDP v0.1.
+
+- `VerificationOptions` now contains only `publicKey`. `VerificationOptions.currentSessionId` and `VerificationOptions.pohVerifier` map to `AuditOptions.sessionId` and `AuditOptions.pohVerifier` on `auditToken()`. `VerificationOptions.now`, `VerificationOptions.revokedTokenIds`, and `VerificationOptions.expectedPresenterAgentId` have no replacements; `AuditReport.recordingPeriod` reports timing, while revocation and presenter decisions remain outside HDP verification. `AuditOptions.linkedRecordRelationship` supplies linked-record findings.
+- `VerificationResult` is a discriminated union. Successful results have `valid: true`; failures have `valid: false`, `failedStep`, and `error`.
+- `HistoricalAuditOptions` is replaced by `AuditOptions`. `HistoricalAuditOptions.publicKey`, `HistoricalAuditOptions.currentSessionId`, and `HistoricalAuditOptions.pohVerifier` map to `AuditOptions.publicKey`, `AuditOptions.sessionId`, and `AuditOptions.pohVerifier`. `HistoricalAuditOptions.currentVerification` is replaced by those top-level fields. `HistoricalAuditOptions.evidence`, `HistoricalAuditOptions.verifyEvidence`, `HistoricalAuditOptions.now`, `HistoricalAuditOptions.revokedTokenIds`, and `HistoricalAuditOptions.expectedPresenterAgentId` have no replacements.
+- `HistoricalAuditReport` is replaced by `AuditReport`. `HistoricalAuditReport.recordIntegrity` maps to `AuditReport.integrity`. `HistoricalAuditReport.currentAcceptance` and `HistoricalAuditReport.historicalAcceptance` have no replacements because HDP does not evaluate action acceptance. `RecordIntegrityStatus` and `RecordIntegrityReport` map to `AuditReport.integrity.status` and `AuditReport.integrity`. `AcceptanceStatus`, `AcceptanceReport`, `HistoricalAcceptanceStatus`, `HistoricalAcceptanceEvidence`, `HistoricalAcceptanceReport`, and `RevocationState` have no replacements.
+- `AuditReport` exposes `integrity`, `recordingPeriod`, `session`, `linkedRecords`, and `poh`. It does not decide whether an action is accepted.
+- `verifyPrincipalChain()` replaces the `joint_authorization` relationship value with `joint_approval`. The `relationshipContext.type` value is `"joint_approval"`; the result reports `relationship: "joint_approval"` or `"unknown"`.
+- `validateToken()` and `verifyToken()` reject unknown top-level token members. Supported members are `hdp`, `header`, `principal`, `scope`, `chain`, and `signature`. Principal metadata belongs in `principal.metadata`, scope extensions in `scope.extensions`, and application data outside the token.
+- Setting `hdp_required: true` in `hdpMiddleware()` options from `@helixar_ai/hdp-mcp` or `@helixar_ai/hdp-autogen` raises during middleware construction. `HdpMiddlewareOptions.onMissing` and `HdpMiddlewareOptions.onInvalid` report missing or invalid records; neither gates calls.
+- `strict=True` raises during construction in `HdpAgentWrapper`, Python `HdpMiddleware` in `hdp-crewai`, `hdp-autogen`, `hdp-langchain`, and `hdp-agent-framework`, and LlamaIndex `HdpCallbackHandler` and `HdpNodePostprocessor`. `HdpAgentOptions.onScopeViolation` reports out-of-scope tools. Python middleware and LlamaIndex handlers record out-of-scope activity while calls continue. Python `HDPScopeViolationError` and TypeScript `HdpScopeViolationError` remain exported but are never thrown.
+- `HdpInstrumentationHandler.init(on_violation="raise")` raises `ValueError` during construction. The default is `on_violation="log"`.
+- Python `verify_chain()` results set `valid` from integrity alone and expose `recorded_after_period` for hop sequence numbers at or after `expires_at`; expiry does not invalidate a record. `hdp-grok` `HdpMiddleware.verify_token()` reports integrity in `valid` and expiry in `recorded_after_period`. Its `expired` field remains available for compatibility, and `HdpTokenExpiredError` remains importable but is never raised.
+
+In 0.1.x, `auditToken()` returned `HistoricalAuditReport` fields `currentAcceptance` and `historicalAcceptance`. In 0.2.0, use the `AuditReport` fields:
+
+```typescript
+import { auditToken, generateKeyPair, issueToken } from "@helixar_ai/hdp";
+
+// 0.1.x: report.currentAcceptance and report.historicalAcceptance
+async function main() {
+  const { privateKey, publicKey } = await generateKeyPair();
+  const token = await issueToken({
+    sessionId: "upgrade-example",
+    principal: { id: "user-1", id_type: "opaque" },
+    scope: {
+      intent: "Review a record",
+      data_classification: "internal",
+      network_egress: false,
+      persistence: false,
+    },
+    signingKey: privateKey,
+    keyId: "upgrade-example",
+  });
+  const report = await auditToken(token, { publicKey });
+  console.log(report.integrity.status, report.recordingPeriod.status);
+}
+
+void main();
 ```
 
 ---
@@ -974,7 +1019,7 @@ This monorepo uses **five independent tag prefixes** to release packages separat
 Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
 
 ```bash
-git tag v0.1.2 && git push origin v0.1.2
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 Pipeline: `test-node` → `vet-node` (ReleaseGuard) → `publish-hdp` + `publish-hdp-mcp` + `publish-hdp-cli` + `publish-hdp-autogen-ts`
@@ -984,7 +1029,7 @@ Pipeline: `test-node` → `vet-node` (ReleaseGuard) → `publish-hdp` + `publish
 Publishes only `@helixar_ai/hdp-autogen` (TypeScript AutoGen middleware):
 
 ```bash
-git tag node/hdp-autogen/v0.1.2 && git push origin node/hdp-autogen/v0.1.2
+git tag node/hdp-autogen/v0.2.0 && git push origin node/hdp-autogen/v0.2.0
 ```
 
 Pipeline: `test-hdp-autogen-ts` → `vet-hdp-autogen-ts` (ReleaseGuard) → `publish-hdp-autogen-ts-standalone`
@@ -992,7 +1037,7 @@ Pipeline: `test-hdp-autogen-ts` → `vet-hdp-autogen-ts` (ReleaseGuard) → `pub
 ### hdp-crewai → PyPI
 
 ```bash
-git tag python/v0.1.1 && git push origin python/v0.1.1
+git tag python/v0.2.0 && git push origin python/v0.2.0
 ```
 
 Pipeline: `test-python` → `vet-hdp-crewai` (ReleaseGuard) → `publish-hdp-crewai`
@@ -1000,7 +1045,7 @@ Pipeline: `test-python` → `vet-hdp-crewai` (ReleaseGuard) → `publish-hdp-cre
 ### hdp-grok → PyPI
 
 ```bash
-git tag python/hdp-grok/v0.1.1 && git push origin python/hdp-grok/v0.1.1
+git tag python/hdp-grok/v0.2.0 && git push origin python/hdp-grok/v0.2.0
 ```
 
 Pipeline: `test-hdp-grok` → `vet-hdp-grok` (ReleaseGuard) → `publish-hdp-grok`
@@ -1008,7 +1053,7 @@ Pipeline: `test-hdp-grok` → `vet-hdp-grok` (ReleaseGuard) → `publish-hdp-gro
 ### hdp-autogen → PyPI
 
 ```bash
-git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
+git tag python/hdp-autogen/v0.2.0 && git push origin python/hdp-autogen/v0.2.0
 ```
 
 Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-hdp-autogen`
@@ -1016,7 +1061,7 @@ Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` (ReleaseGuard) → `publish-h
 ### hdp-agent-framework → PyPI
 
 ```bash
-git tag python/hdp-agent-framework/v0.1.0 && git push origin python/hdp-agent-framework/v0.1.0
+git tag python/hdp-agent-framework/v0.2.0 && git push origin python/hdp-agent-framework/v0.2.0
 ```
 
 Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` (ReleaseGuard) → `publish-hdp-agent-framework`
@@ -1024,7 +1069,7 @@ Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` (ReleaseGuard
 ### hdp-langchain → PyPI
 
 ```bash
-git tag python/hdp-langchain/v0.1.1 && git push origin python/hdp-langchain/v0.1.1
+git tag python/hdp-langchain/v0.2.0 && git push origin python/hdp-langchain/v0.2.0
 ```
 
 Pipeline: `test-hdp-langchain` → `vet-hdp-langchain` (ReleaseGuard) → `publish-hdp-langchain`
@@ -1032,7 +1077,7 @@ Pipeline: `test-hdp-langchain` → `vet-hdp-langchain` (ReleaseGuard) → `publi
 ### llama-index-callbacks-hdp → PyPI
 
 ```bash
-git tag python/llama-index-callbacks-hdp/v0.1.1 && git push origin python/llama-index-callbacks-hdp/v0.1.1
+git tag python/llama-index-callbacks-hdp/v0.2.0 && git push origin python/llama-index-callbacks-hdp/v0.2.0
 ```
 
 Pipeline: `test-llama-index-callbacks-hdp` → `vet-llama-index-callbacks-hdp` (ReleaseGuard) → `publish-llama-index-callbacks-hdp`
@@ -1040,7 +1085,7 @@ Pipeline: `test-llama-index-callbacks-hdp` → `vet-llama-index-callbacks-hdp` (
 ### hdp-llamaindex → PyPI
 
 ```bash
-git tag python/hdp-llamaindex/v0.1.1 && git push origin python/hdp-llamaindex/v0.1.1
+git tag python/hdp-llamaindex/v0.2.0 && git push origin python/hdp-llamaindex/v0.2.0
 ```
 
 Pipeline: `test-hdp-llamaindex` → `vet-hdp-llamaindex` (ReleaseGuard) → `publish-hdp-llamaindex`

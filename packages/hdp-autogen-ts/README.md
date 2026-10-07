@@ -3,7 +3,7 @@
 TypeScript middleware and a stateful wrapper for recording HDP provenance in AutoGen applications.
 
 ```sh
-npm install @helixar_ai/hdp-autogen
+npm install @helixar_ai/hdp-autogen@0.2.0
 ```
 
 ## Record agent activity
@@ -72,14 +72,14 @@ Published to [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) via Gi
 
 **Standalone** (publishes only this package):
 ```bash
-git tag node/hdp-autogen/v0.1.2 && git push origin node/hdp-autogen/v0.1.2
+git tag node/hdp-autogen/v0.2.0 && git push origin node/hdp-autogen/v0.2.0
 ```
 
 Pipeline: `test-hdp-autogen-ts` → `vet-hdp-autogen-ts` ([ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard)) → `publish-hdp-autogen-ts-standalone`
 
 **With all Node packages** (publishes core + mcp + cli + autogen):
 ```bash
-git tag v0.1.2 && git push origin v0.1.2
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 | Detail | Value |
@@ -92,7 +92,7 @@ git tag v0.1.2 && git push origin v0.1.2
 
 ## Specification
 
-HDP is specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03)).
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

@@ -9,7 +9,7 @@ Every tool call, retrieval step, and LLM invocation is recorded in a tamper-evid
 ## Installation
 
 ```bash
-pip install llama-index-callbacks-hdp
+pip install llama-index-callbacks-hdp==0.2.0
 ```
 
 ## Usage
@@ -83,6 +83,10 @@ print(result.recorded_after_period)  # hop seq values at or after expires_at
 | Verifiable offline | ✗ | ✓ |
 | Scope declaration and violation records | ✗ | ✓ |
 | No central registry | n/a | ✓ |
+
+## Specification
+
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

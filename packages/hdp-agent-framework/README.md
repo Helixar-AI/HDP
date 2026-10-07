@@ -8,7 +8,7 @@ Every chat call and tool invocation is recorded in a tamper-evident chain of Ed2
 signatures, verifiable fully **offline** with a single public key.
 
 ```
-pip install hdp-agent-framework
+pip install hdp-agent-framework==0.2.0
 ```
 
 ---
@@ -198,7 +198,7 @@ const result = verifyChain(JSON.parse(tokenJson), publicKey);
 Published to [PyPI](https://pypi.org/project/hdp-agent-framework/) via GitHub Actions:
 
 ```bash
-git tag python/hdp-agent-framework/v0.1.0 && git push origin python/hdp-agent-framework/v0.1.0
+git tag python/hdp-agent-framework/v0.2.0 && git push origin python/hdp-agent-framework/v0.2.0
 ```
 
 Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` ([ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard)) → `publish-hdp-agent-framework`
@@ -215,8 +215,7 @@ Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` ([ReleaseGuar
 
 ## Spec & citation
 
-HDP is an IETF draft standard:
-[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03))
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 Protocol specification and documentation:
 [helixar.ai/about/labs/hdp/](https://helixar.ai/about/labs/hdp/)

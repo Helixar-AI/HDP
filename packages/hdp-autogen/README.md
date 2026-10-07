@@ -5,7 +5,7 @@
 Every speaker turn in an AutoGen GroupChat is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-autogen
+pip install hdp-autogen==0.2.0
 ```
 
 ---
@@ -153,7 +153,7 @@ const result = verifyChain(JSON.parse(tokenJson), publicKey);
 Published to [PyPI](https://pypi.org/project/hdp-autogen/) via GitHub Actions when a matching tag is pushed:
 
 ```bash
-git tag python/hdp-autogen/v0.1.2 && git push origin python/hdp-autogen/v0.1.2
+git tag python/hdp-autogen/v0.2.0 && git push origin python/hdp-autogen/v0.2.0
 ```
 
 Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` ([ReleaseGuard](https://github.com/Helixar-AI/ReleaseGuard)) → `publish-hdp-autogen`
@@ -170,8 +170,7 @@ Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` ([ReleaseGuard](https://githu
 
 ## Spec
 
-Human Delegation Provenance (HDP) is an IETF draft:
-[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03))
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

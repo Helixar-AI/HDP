@@ -3,7 +3,7 @@
 MCP middleware for inspecting HDP provenance records.
 
 ```sh
-npm install @helixar_ai/hdp-mcp
+npm install @helixar_ai/hdp-mcp@0.2.0
 ```
 
 ## Usage
@@ -31,7 +31,7 @@ HDP tokens are records, not access controls. Missing, undecodable, expired, or i
 
 ## Specification
 
-HDP is specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03)).
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 

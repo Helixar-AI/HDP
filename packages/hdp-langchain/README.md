@@ -5,7 +5,7 @@
 Every tool call in a LangChain agent is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-langchain
+pip install hdp-langchain==0.2.0
 ```
 
 ---
@@ -203,8 +203,7 @@ const result = verifyChain(JSON.parse(tokenJson), publicKey);
 
 ## Spec
 
-Human Delegation Provenance (HDP) is an IETF draft:
-[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03))
+This package follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03) ([latest revision](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)).
 
 ## License
 
