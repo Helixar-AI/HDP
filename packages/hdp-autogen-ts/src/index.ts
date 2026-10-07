@@ -14,6 +14,7 @@ import {
   verifyToken,
   decodeHeader,
   encodeHeader,
+  validateToken,
   HDP_HEADER,
   HDP_LEGACY_HEADER,
   HdpError,
@@ -136,12 +137,7 @@ export class HdpAgentWrapper {
     this.keyId = options.keyId ?? 'default'
     this.expiresInMs = options.expiresInMs ?? 24 * 60 * 60 * 1000
     this.onScopeViolation = options.onScopeViolation
-  }
 
-  /**
-   * Issue the root HDP token. Call before the first speaker turn.
-   */
-  async init(): Promise<void> {
     const hdpScope: HdpScope = {
       intent: this.scope.intent,
       data_classification: this.scope.data_classification ?? 'internal',
@@ -151,16 +147,52 @@ export class HdpAgentWrapper {
       authorized_resources: this.scope.authorized_resources,
       max_hops: this.scope.max_hops,
     }
-
-    this.token = await issueToken({
-      sessionId: this.sessionId,
-      principal: this.principal as HdpPrincipal,
+    validateToken({
+      hdp: '0.1',
+      header: {
+        token_id: '00000000-0000-4000-8000-000000000000',
+        issued_at: 0,
+        expires_at: 1,
+        session_id: this.sessionId,
+        version: '0.1',
+      },
+      principal: this.principal,
       scope: hdpScope,
-      signingKey: this.signingKey,
-      keyId: this.keyId,
-      expiresInMs: this.expiresInMs,
+      chain: [],
+      signature: { alg: 'Ed25519', kid: this.keyId, value: 'A'.repeat(86) },
     })
+  }
+
+  /**
+   * Issue the root HDP token. Call before the first speaker turn.
+   */
+  async init(): Promise<void> {
+    this.token = null
     this.hopCount = 0
+    try {
+      const hdpScope: HdpScope = {
+        intent: this.scope.intent,
+        data_classification: this.scope.data_classification ?? 'internal',
+        network_egress: this.scope.network_egress ?? true,
+        persistence: this.scope.persistence ?? false,
+        authorized_tools: this.scope.authorized_tools,
+        authorized_resources: this.scope.authorized_resources,
+        max_hops: this.scope.max_hops,
+      }
+
+      this.token = await issueToken({
+        sessionId: this.sessionId,
+        principal: this.principal as HdpPrincipal,
+        scope: hdpScope,
+        signingKey: this.signingKey,
+        keyId: this.keyId,
+        expiresInMs: this.expiresInMs,
+      })
+    } catch {
+      this.token = null
+      this.hopCount = 0
+      console.warn('HDP root record issuance failed; action continues')
+    }
   }
 
   /**
@@ -172,6 +204,7 @@ export class HdpAgentWrapper {
       if (!this.token) {
         await this.init()
       }
+      if (!this.token) return
 
       const maxHops = this.scope.max_hops
       if (maxHops !== undefined && this.hopCount >= maxHops) {

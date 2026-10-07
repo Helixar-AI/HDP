@@ -113,6 +113,24 @@ class TestNonBlocking:
         mw._extend_chain(agent_id="tool", action_summary="test", agent_type="tool-executor")
         assert mw.export_token() is None
 
+    def test_root_validation_failure_does_not_abort_chain_result(self, monkeypatch, caplog):
+        mw, _ = _make_middleware()
+        handler = mw.get_callback_handler()
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr("hdp_langchain.middleware._validate_token_input", fail_validation)
+
+        def run_chain():
+            handler.on_chain_start(_chain_serialized(), {}, run_id=_make_run_id())
+            return "chain result"
+
+        assert run_chain() == "chain result"
+        assert mw.export_token() is None
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text
+
 
 # ---------------------------------------------------------------------------
 # Root token issuance
@@ -495,17 +513,27 @@ class TestRecordAppendIsolation:
 
 class TestIssuanceValidation:
     @pytest.mark.parametrize("expires_in_ms", [0, -1])
-    def test_root_issuance_rejects_nonpositive_ttl(self, expires_in_ms):
+    def test_nonpositive_ttl_does_not_raise_during_root_record_issuance(self, expires_in_ms):
         mw, _ = _make_middleware(expires_in_ms=expires_in_ms)
 
-        with pytest.raises(ValueError, match="expires_at must be greater"):
-            mw.before_kickoff()
+        mw.before_kickoff()
+
+        assert mw.export_token() is None
 
     def test_root_issuance_rejects_invalid_max_hops(self):
-        mw, _ = _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
-
         with pytest.raises(ValueError, match="max_hops must be a positive integer"):
-            mw.before_kickoff()
+            _make_middleware(scope=ScopePolicy(intent="x", max_hops=0))
+
+    def test_invalid_principal_id_type_fails_at_construction(self):
+        key, _ = _generate_key()
+
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpMiddleware(
+                signing_key=key,
+                session_id="test-session",
+                principal=HdpPrincipal(id="u", id_type="x-a\rb"),
+                scope=ScopePolicy(intent="test"),
+            )
 
     def test_invalid_internal_record_is_rejected_before_signing(self, monkeypatch, caplog):
         mw, _ = _make_middleware()

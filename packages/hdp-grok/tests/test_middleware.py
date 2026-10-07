@@ -64,6 +64,35 @@ class TestMiddlewareKeyResolution:
         m = HdpMiddleware(signing_key=key, principal_id="u@x.com", session_id="my-session")
         assert m.session_id == "my-session"
 
+    def test_invalid_principal_id_type_fails_at_construction(self):
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpMiddleware(
+                signing_key=_make_key(),
+                principal_id="u@x.com",
+                principal_id_type="x-a\rb",
+            )
+
+    def test_invalid_configured_scope_fails_at_construction(self):
+        with pytest.raises(ValueError, match="scope.authorized_tools"):
+            HdpMiddleware(
+                signing_key=_make_key(),
+                principal_id="u@x.com",
+                scope=["read_email", 1],
+            )
+
+    def test_custom_principal_id_type_and_default_scope_are_used(self):
+        m = HdpMiddleware(
+            signing_key=_make_key(),
+            principal_id="u@x.com",
+            principal_id_type="x-custom",
+            scope=["read_email"],
+        )
+
+        token = json.loads(m.issue_token()["token"])
+
+        assert token["principal"]["id_type"] == "x-custom"
+        assert token["scope"]["authorized_tools"] == ["read_email"]
+
 
 class TestMiddlewareIssueToken:
     def _make(self, **kw):
@@ -76,11 +105,13 @@ class TestMiddlewareIssueToken:
         token = json.loads(result["token"])
         assert token["header"]["session_id"] == m.session_id
 
-    def test_issue_token_without_principal_raises(self):
+    def test_issue_token_without_principal_returns_no_token(self, caplog):
         key = _make_key()
         m = HdpMiddleware(signing_key=key)
-        with pytest.raises(ValueError, match="principal_id"):
-            m.issue_token()
+
+        assert m.issue_token() == {"token": None}
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "principal_id must be set" not in caplog.text
 
     def test_issue_token_rotation(self):
         m = self._make()
@@ -96,6 +127,29 @@ class TestMiddlewareIssueToken:
         result = m.issue_token(scope=["read_email"])
         token = json.loads(result["token"])
         assert "read_email" in token["scope"]["authorized_tools"]
+
+    def test_root_validation_failure_returns_no_token_and_keeps_action_running(
+        self, monkeypatch, caplog
+    ):
+        m = self._make()
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr("hdp_grok._crypto._validate_token_input", fail_validation)
+
+        issuance_result = m.handle_tool_call("hdp_issue_token", {})
+
+        def downstream():
+            return {"result": "agent action result"}
+
+        action_result = downstream()
+
+        assert issuance_result == {"token": None}
+        assert m.export_current_token() is None
+        assert action_result == {"result": "agent action result"}
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text
 
 
 class TestMiddlewareExtendChain:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 import pytest
 import jcs
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -67,6 +68,16 @@ class TestRootTokenIssuance:
         result = verify_chain(token, pub.public_bytes_raw())
         assert result.valid
 
+    def test_invalid_principal_id_type_fails_at_handler_construction(self):
+        key, _ = _generate_key()
+
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpCallbackHandler(
+                signing_key=key,
+                principal=HdpPrincipal(id="u", id_type="x-a\rb"),
+                scope=ScopePolicy(intent="test"),
+            )
+
     def test_export_token_matches_context(self):
         handler, _, _ = _make_handler()
         handler.start_trace("s2")
@@ -81,17 +92,16 @@ class TestRootTokenIssuance:
         assert get_token()["signature"]["value"] != "corrupted"
 
     @pytest.mark.parametrize("expires_in_ms", [0, -1])
-    def test_root_issuance_rejects_nonpositive_ttl(self, expires_in_ms):
+    def test_nonpositive_ttl_does_not_raise_during_root_record_issuance(self, expires_in_ms):
         handler, _, _ = _make_handler(expires_in_ms=expires_in_ms)
 
-        with pytest.raises(ValueError, match="expires_at must be greater"):
-            handler.start_trace("invalid-ttl")
+        handler.start_trace("invalid-ttl")
 
-    def test_root_issuance_rejects_invalid_max_hops(self):
-        handler, _, _ = _make_handler(scope=ScopePolicy(intent="x", max_hops=0))
+        assert get_token() is None
 
+    def test_invalid_max_hops_fails_at_handler_construction(self):
         with pytest.raises(ValueError, match="max_hops must be a positive integer"):
-            handler.start_trace("invalid-max-hops")
+            _make_handler(scope=ScopePolicy(intent="x", max_hops=0))
 
 
 class TestEndTrace:
@@ -271,6 +281,15 @@ class TestScopeEnforcement:
                 scope=ScopePolicy(intent="x", max_hops=0),
             )
 
+    def test_instrumentation_rejects_invalid_principal_id_type_at_construction(self):
+        key, _ = _generate_key()
+        with pytest.raises(ValueError, match="principal.id_type"):
+            HdpInstrumentationHandler.init(
+                signing_key=key,
+                principal=HdpPrincipal(id="u", id_type="x-a\rb"),
+                scope=ScopePolicy(intent="x"),
+            )
+
     def test_instrumentation_export_is_a_defensive_deep_copy(self):
         handler, _, _ = _make_handler()
         handler.start_trace("instrumentation-export")
@@ -304,3 +323,51 @@ class TestNonBlocking:
             CBEventType.FUNCTION_CALL,
             payload={EventPayload.TOOL: FakeTool("web_search")},
         )
+
+    def test_root_validation_failure_does_not_abort_query_result(self, monkeypatch, caplog):
+        handler, _, _ = _make_handler()
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr("llama_index.callbacks.hdp.callbacks._validate_token_input", fail_validation)
+
+        def run_query():
+            handler.start_trace("runtime-validation-failure")
+            return "query result"
+
+        assert run_query() == "query result"
+        assert get_token() is None
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text
+
+    def test_instrumentation_root_validation_failure_does_not_abort_query_result(
+        self, monkeypatch, caplog
+    ):
+        from llama_index.callbacks.hdp.instrumentation import HdpEventHandler
+
+        key, _ = _generate_key()
+        event_handler = HdpEventHandler(
+            signing_key=key,
+            principal=HdpPrincipal(id="u", id_type="opaque"),
+            scope=ScopePolicy(intent="test"),
+            key_id="default",
+            expires_in_ms=86_400_000,
+            on_token_ready=None,
+        )
+
+        def fail_validation(*args, **kwargs):
+            raise RuntimeError("private root token details")
+
+        monkeypatch.setattr(
+            "llama_index.callbacks.hdp.instrumentation._validate_token_input", fail_validation
+        )
+
+        def run_query():
+            event_handler._on_query_start(SimpleNamespace(id_="runtime-query"))
+            return "instrumentation query result"
+
+        assert run_query() == "instrumentation query result"
+        assert get_token() is None
+        assert "HDP root record issuance failed; action continues" in caplog.text
+        assert "private root token details" not in caplog.text

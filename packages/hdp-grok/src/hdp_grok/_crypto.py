@@ -302,19 +302,16 @@ def _validate_token_input(token: object) -> str | None:
 
     return None
 
-def issue_root_token(
-    signing_key: bytes,
+def _build_root_token_candidate(
     key_id: str,
     session_id: str,
     principal_id: str,
+    principal_id_type: str,
     scope: list[str],
-    expires_in: int,
-    max_hops: int | None = None,
+    max_hops: int | None,
+    issued_at: int,
+    expires_at: int,
 ) -> dict:
-    """Build and sign a root HDP token dict."""
-    if isinstance(expires_in, bool) or not isinstance(expires_in, int) or expires_in <= 0:
-        raise ValueError("expires_in must be a positive integer")
-    now = int(time.time() * 1000)
     scope_record: dict = {
         "intent": principal_id,
         "data_classification": "internal",
@@ -328,22 +325,72 @@ def issue_root_token(
         "hdp": "0.1",
         "header": {
             "token_id": str(uuid.uuid4()),
-            "issued_at": now,
-            "expires_at": now + expires_in * 1000,
+            "issued_at": issued_at,
+            "expires_at": expires_at,
             "session_id": session_id,
             "version": "0.1",
         },
-        "principal": {
-            "id": principal_id,
-            "id_type": "opaque",
-        },
+        "principal": {"id": principal_id, "id_type": principal_id_type},
         "scope": scope_record,
         "chain": [],
     }
-    candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": key_id, "value": "A" * 86}}
+    return {
+        **unsigned,
+        "signature": {"alg": "Ed25519", "kid": key_id, "value": "A" * 86},
+    }
+
+
+def validate_root_token_config(
+    key_id: str,
+    session_id: str,
+    principal_id: str,
+    principal_id_type: str,
+    scope: list[str],
+    max_hops: int | None = None,
+) -> None:
+    candidate = _build_root_token_candidate(
+        key_id=key_id,
+        session_id=session_id,
+        principal_id=principal_id,
+        principal_id_type=principal_id_type,
+        scope=scope,
+        max_hops=max_hops,
+        issued_at=0,
+        expires_at=1,
+    )
     input_error = _validate_token_input(candidate)
     if input_error is not None:
         raise ValueError(input_error)
+
+
+def issue_root_token(
+    signing_key: bytes,
+    key_id: str,
+    session_id: str,
+    principal_id: str,
+    scope: list[str],
+    expires_in: int,
+    max_hops: int | None = None,
+    principal_id_type: str = "opaque",
+) -> dict:
+    """Build and sign a root HDP token dict."""
+    if isinstance(expires_in, bool) or not isinstance(expires_in, int) or expires_in <= 0:
+        raise ValueError("expires_in must be a positive integer")
+    now = int(time.time() * 1000)
+    candidate = _build_root_token_candidate(
+        key_id=key_id,
+        session_id=session_id,
+        principal_id=principal_id,
+        principal_id_type=principal_id_type,
+        scope=scope,
+        max_hops=max_hops,
+        issued_at=now,
+        expires_at=now + expires_in * 1000,
+    )
+    input_error = _validate_token_input(candidate)
+    if input_error is not None:
+        raise ValueError(input_error)
+    unsigned = {key: value for key, value in candidate.items() if key != "signature"}
     signature = _sign_root(unsigned, signing_key, key_id)
     return {**unsigned, "signature": signature}
 

@@ -232,6 +232,24 @@ def _validate_token_input(token: object) -> str | None:
     return None
 
 
+def _validate_principal_scope(principal: object, scope: object) -> str | None:
+    candidate = {
+        "hdp": "0.1",
+        "header": {
+            "token_id": "00000000-0000-4000-8000-000000000000",
+            "issued_at": 0,
+            "expires_at": 1,
+            "session_id": "configuration-check",
+            "version": "0.1",
+        },
+        "principal": principal,
+        "scope": scope,
+        "chain": [],
+        "signature": {"alg": "Ed25519", "kid": "configuration-check", "value": "A" * 86},
+    }
+    return _validate_token_input(candidate)
+
+
 @dataclass
 class HopVerification:
     """Per-hop signature verification outcome."""

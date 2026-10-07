@@ -45,6 +45,55 @@ describe('HdpAgentWrapper', () => {
     expect(token!.chain).toHaveLength(0)
   })
 
+  it('rejects an invalid custom principal id_type during construction', async () => {
+    const { privateKey } = await generateKeyPair()
+
+    expect(() => new HdpAgentWrapper({
+      signingKey: privateKey,
+      sessionId: 'sess-autogen-invalid-config',
+      principal: { id: 'usr_test', id_type: 'x-a\rb' },
+      scope: { intent: 'test' },
+    })).toThrow()
+  })
+
+  it('rejects an invalid scope during construction', async () => {
+    const { privateKey } = await generateKeyPair()
+
+    expect(() => new HdpAgentWrapper({
+      signingKey: privateKey,
+      sessionId: 'sess-autogen-invalid-scope',
+      principal: { id: 'usr_test', id_type: 'opaque' },
+      scope: { intent: 'test', max_hops: 0 },
+    })).toThrow()
+  })
+
+  it('logs root issuance failure and lets the speaker action continue', async () => {
+    const { privateKey } = await generateKeyPair()
+    const principal = { id: 'usr_test', id_type: 'opaque' }
+    const wrapper = new HdpAgentWrapper({
+      signingKey: privateKey,
+      sessionId: 'sess-autogen-runtime-failure',
+      principal,
+      scope: { intent: 'test' },
+    })
+    const logWarning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const downstream = vi.fn().mockResolvedValue('agent result')
+
+    principal.id_type = 'x-a\rb'
+
+    try {
+      await wrapper.onSpeakerTurn('agent', 'speaker turn')
+      const result = await downstream()
+
+      expect(result).toBe('agent result')
+      expect(downstream).toHaveBeenCalledOnce()
+      expect(wrapper.exportToken()).toBeNull()
+      expect(logWarning.mock.calls).toEqual([['HDP root record issuance failed; action continues']])
+    } finally {
+      logWarning.mockRestore()
+    }
+  })
+
   it('records speaker turns as hops', async () => {
     const { wrapper, publicKey } = await makeWrapper()
     await wrapper.init()

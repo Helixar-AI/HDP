@@ -40,7 +40,7 @@ from typing import Any, Optional
 
 from ._crypto import sign_hop, sign_root
 from ._types import DataClassification, HdpPrincipal
-from .verify import _validate_token_input
+from .verify import _validate_principal_scope, _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,14 @@ class HdpMiddleware:
         self._expires_in_ms = expires_in_ms
         self._token: Optional[dict] = None
         self._hop_seq = 0
+        try:
+            input_error = _validate_principal_scope(
+                self._build_principal_dict(), self._scope.to_dict()
+            )
+        except Exception as exc:
+            raise ValueError("principal and scope configuration is invalid") from exc
+        if input_error is not None:
+            raise ValueError(input_error)
 
     # ------------------------------------------------------------------
     # ChatMiddleware protocol
@@ -221,31 +229,37 @@ class HdpMiddleware:
 
     def _issue_root_token(self) -> None:
         """Issue the HDP root token. Called lazily on first process() call."""
-        now = int(time.time() * 1000)
-        unsigned: dict = {
-            "hdp": "0.1",
-            "header": {
-                "token_id": str(uuid.uuid4()),
-                "issued_at": now,
-                "expires_at": now + self._expires_in_ms,
-                "session_id": self._session_id,
-                "version": "0.1",
-            },
-            "principal": self._build_principal_dict(),
-            "scope": self._scope.to_dict(),
-            "chain": [],
-        }
-        candidate = {**unsigned, "signature": {"alg": "Ed25519", "kid": self._key_id, "value": "A" * 86}}
-        input_error = _validate_token_input(candidate)
-        if input_error is not None:
-            raise ValueError(input_error)
+        self._token = None
+        self._hop_seq = 0
         try:
+            now = int(time.time() * 1000)
+            unsigned: dict = {
+                "hdp": "0.1",
+                "header": {
+                    "token_id": str(uuid.uuid4()),
+                    "issued_at": now,
+                    "expires_at": now + self._expires_in_ms,
+                    "session_id": self._session_id,
+                    "version": "0.1",
+                },
+                "principal": self._build_principal_dict(),
+                "scope": self._scope.to_dict(),
+                "chain": [],
+            }
+            candidate = {
+                **unsigned,
+                "signature": {"alg": "Ed25519", "kid": self._key_id, "value": "A" * 86},
+            }
+            input_error = _validate_token_input(candidate)
+            if input_error is not None:
+                raise ValueError(input_error)
             signature = sign_root(unsigned, self._signing_key, self._key_id)
             self._token = {**unsigned, "signature": signature}
             logger.debug("HDP root token issued: %s", self._token["header"]["token_id"])
         except Exception:
-            logger.warning("HDP root record signing failed; action continues")
-            # Leave self._token as None — non-blocking design
+            self._token = None
+            self._hop_seq = 0
+            logger.warning("HDP root record issuance failed; action continues")
 
     # ------------------------------------------------------------------
     # Internal: chain extension
