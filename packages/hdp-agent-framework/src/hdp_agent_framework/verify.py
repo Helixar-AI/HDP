@@ -232,20 +232,45 @@ def _validate_token_input(token: object) -> str | None:
     return None
 
 
-def _validate_principal_scope(principal: object, scope: object) -> str | None:
+def _validate_root_token_config(
+    principal: object,
+    scope: object,
+    expires_in_ms: object,
+    issued_at_ms: int,
+    key_id: str = "configuration-check",
+    session_id: str = "configuration-check",
+) -> str | None:
+    if (
+        isinstance(expires_in_ms, bool)
+        or not isinstance(expires_in_ms, int)
+        or expires_in_ms <= 0
+    ):
+        return "expires_in_ms must be a positive integer"
+    if (
+        isinstance(issued_at_ms, bool)
+        or not isinstance(issued_at_ms, int)
+        or issued_at_ms < 0
+        or issued_at_ms > _MAX_SAFE_INTEGER
+    ):
+        return f"header.issued_at must be an integer from 0 to {_MAX_SAFE_INTEGER}"
+
+    expires_at_ms = issued_at_ms + expires_in_ms
+    if expires_at_ms <= issued_at_ms or expires_at_ms > _MAX_SAFE_INTEGER:
+        return "expires_in_ms must produce an expires_at within Section 3 integer bounds"
+
     candidate = {
         "hdp": "0.1",
         "header": {
             "token_id": "00000000-0000-4000-8000-000000000000",
-            "issued_at": 0,
-            "expires_at": 1,
-            "session_id": "configuration-check",
+            "issued_at": issued_at_ms,
+            "expires_at": expires_at_ms,
+            "session_id": session_id,
             "version": "0.1",
         },
         "principal": principal,
         "scope": scope,
         "chain": [],
-        "signature": {"alg": "Ed25519", "kid": "configuration-check", "value": "A" * 86},
+        "signature": {"alg": "Ed25519", "kid": key_id, "value": "A" * 86},
     }
     return _validate_token_input(candidate)
 

@@ -108,16 +108,16 @@ class HdpMiddleware:
         self.principal_id_type = principal_id_type
         self.default_scope = scope if scope is not None else []
 
-        if principal_id is not None or scope is not None or principal_id_type != "opaque":
-            validate_root_token_config(
-                key_id=self.key_id,
-                session_id=self.session_id,
-                principal_id=(
-                    principal_id if principal_id is not None else "validation-principal"
-                ),
-                principal_id_type=self.principal_id_type,
-                scope=self.default_scope,
-            )
+        validate_root_token_config(
+            key_id=self.key_id,
+            session_id=self.session_id,
+            principal_id=(
+                principal_id if principal_id is not None else "validation-principal"
+            ),
+            principal_id_type=self.principal_id_type,
+            scope=self.default_scope,
+            default_expires_in=self.default_expires_in,
+        )
 
         # Derive public key once at init for use in verify_token
         self._public_key_bytes: bytes = (

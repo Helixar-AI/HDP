@@ -40,7 +40,7 @@ from typing import Any, Optional
 
 from ._crypto import sign_hop, sign_root
 from ._types import DataClassification, HdpPrincipal
-from .verify import _validate_principal_scope, _validate_token_input
+from .verify import _validate_root_token_config, _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +124,11 @@ class HdpMiddleware:
         self._token: Optional[dict] = None
         self._hop_seq = 0
         try:
-            input_error = _validate_principal_scope(
-                self._build_principal_dict(), self._scope.to_dict()
+            input_error = _validate_root_token_config(
+                self._build_principal_dict(),
+                self._scope.to_dict(),
+                self._expires_in_ms,
+                int(time.time() * 1000),
             )
         except Exception as exc:
             raise ValueError("principal and scope configuration is invalid") from exc

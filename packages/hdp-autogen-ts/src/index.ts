@@ -147,12 +147,23 @@ export class HdpAgentWrapper {
       authorized_resources: this.scope.authorized_resources,
       max_hops: this.scope.max_hops,
     }
+    const issuedAt = Date.now()
+    const expiresAt = issuedAt + this.expiresInMs
+    if (
+      !Number.isSafeInteger(this.expiresInMs) ||
+      this.expiresInMs <= 0 ||
+      !Number.isSafeInteger(expiresAt) ||
+      expiresAt <= issuedAt
+    ) {
+      throw new RangeError('expiresInMs must produce a valid Section 3 expiration')
+    }
+
     validateToken({
       hdp: '0.1',
       header: {
         token_id: '00000000-0000-4000-8000-000000000000',
-        issued_at: 0,
-        expires_at: 1,
+        issued_at: issuedAt,
+        expires_at: expiresAt,
         session_id: this.sessionId,
         version: '0.1',
       },

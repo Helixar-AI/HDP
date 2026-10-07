@@ -49,7 +49,7 @@ from ._crypto import sign_hop, sign_root
 from ._types import DataClassification, HdpPrincipal
 from .callbacks import HDPScopeViolationError, ScopePolicy
 from .session import clear_token, get_token, set_token
-from .verify import _validate_principal_scope, _validate_token_input
+from .verify import _validate_root_token_config, _validate_token_input
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +133,11 @@ class HdpEventHandler(BaseEventHandler):
         self._on_token_ready = on_token_ready
         self._hop_seq = 0
         try:
-            input_error = _validate_principal_scope(
-                self._build_principal_dict(), self._scope.to_dict()
+            input_error = _validate_root_token_config(
+                self._build_principal_dict(),
+                self._scope.to_dict(),
+                self._expires_in_ms,
+                int(time.time() * 1000),
             )
         except Exception as exc:
             raise ValueError("principal and scope configuration is invalid") from exc
@@ -336,26 +339,19 @@ class HdpInstrumentationHandler:
             raise ValueError("HDP tokens are records and cannot gate actions")
 
         now = int(time.time() * 1000)
-        candidate = {
-            "hdp": "0.1",
-            "header": {
-                "token_id": str(uuid.uuid4()),
-                "issued_at": now,
-                "expires_at": now + expires_in_ms,
-                "session_id": "validation-session",
-                "version": "0.1",
-            },
-            "principal": {
+        input_error = _validate_root_token_config(
+            {
                 "id": principal.id,
                 "id_type": principal.id_type,
                 **({"display_name": principal.display_name} if principal.display_name is not None else {}),
                 **({"metadata": principal.metadata} if principal.metadata is not None else {}),
             },
-            "scope": scope.to_dict(),
-            "chain": [],
-            "signature": {"alg": "Ed25519", "kid": key_id, "value": "A" * 86},
-        }
-        input_error = _validate_token_input(candidate)
+            scope.to_dict(),
+            expires_in_ms,
+            now,
+            key_id=key_id,
+            session_id="validation-session",
+        )
         if input_error is not None:
             raise ValueError(input_error)
 

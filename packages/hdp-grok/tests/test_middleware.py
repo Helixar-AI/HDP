@@ -21,6 +21,15 @@ def _make_key() -> bytes:
 
 
 class TestMiddlewareKeyResolution:
+    @pytest.mark.parametrize("default_expires_in", [0, -1, True, 1.5, 10**20])
+    def test_invalid_default_lifetime_fails_at_construction(self, default_expires_in):
+        with pytest.raises(ValueError, match="default_expires_in"):
+            HdpMiddleware(
+                signing_key=_make_key(),
+                principal_id="u@x.com",
+                default_expires_in=default_expires_in,
+            )
+
     def test_bytes_key_accepted(self):
         key = _make_key()
         m = HdpMiddleware(signing_key=key, principal_id="u@x.com")

@@ -346,8 +346,21 @@ def validate_root_token_config(
     principal_id: str,
     principal_id_type: str,
     scope: list[str],
+    default_expires_in: int,
     max_hops: int | None = None,
 ) -> None:
+    if (
+        isinstance(default_expires_in, bool)
+        or not isinstance(default_expires_in, int)
+        or default_expires_in <= 0
+    ):
+        raise ValueError("default_expires_in must be a positive integer")
+    issued_at = int(time.time() * 1000)
+    expires_at = issued_at + default_expires_in * 1000
+    if expires_at <= issued_at or expires_at > _MAX_SAFE_INTEGER:
+        raise ValueError(
+            "default_expires_in must produce an expires_at within Section 3 bounds"
+        )
     candidate = _build_root_token_candidate(
         key_id=key_id,
         session_id=session_id,
@@ -355,8 +368,8 @@ def validate_root_token_config(
         principal_id_type=principal_id_type,
         scope=scope,
         max_hops=max_hops,
-        issued_at=0,
-        expires_at=1,
+        issued_at=issued_at,
+        expires_at=expires_at,
     )
     input_error = _validate_token_input(candidate)
     if input_error is not None:

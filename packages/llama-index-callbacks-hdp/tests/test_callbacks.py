@@ -91,13 +91,10 @@ class TestRootTokenIssuance:
         assert get_token()["header"]["session_id"] == "s2"
         assert get_token()["signature"]["value"] != "corrupted"
 
-    @pytest.mark.parametrize("expires_in_ms", [0, -1])
-    def test_nonpositive_ttl_does_not_raise_during_root_record_issuance(self, expires_in_ms):
-        handler, _, _ = _make_handler(expires_in_ms=expires_in_ms)
-
-        handler.start_trace("invalid-ttl")
-
-        assert get_token() is None
+    @pytest.mark.parametrize("expires_in_ms", [0, -1, True, 1.5, 2**53])
+    def test_invalid_ttl_fails_at_handler_construction(self, expires_in_ms):
+        with pytest.raises(ValueError, match="expires_in_ms"):
+            _make_handler(expires_in_ms=expires_in_ms)
 
     def test_invalid_max_hops_fails_at_handler_construction(self):
         with pytest.raises(ValueError, match="max_hops must be a positive integer"):
@@ -261,10 +258,10 @@ class TestScopeEnforcement:
                 on_violation="raise",
             )
 
-    @pytest.mark.parametrize("expires_in_ms", [0, -1])
-    def test_instrumentation_rejects_nonpositive_ttl_at_construction(self, expires_in_ms):
+    @pytest.mark.parametrize("expires_in_ms", [0, -1, True, 1.5, 2**53])
+    def test_instrumentation_rejects_invalid_ttl_at_construction(self, expires_in_ms):
         key, _ = _generate_key()
-        with pytest.raises(ValueError, match="expires_at must be greater"):
+        with pytest.raises(ValueError, match="expires_in_ms"):
             HdpInstrumentationHandler.init(
                 signing_key=key,
                 principal=HdpPrincipal(id="user@test.com", id_type="email"),

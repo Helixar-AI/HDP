@@ -67,6 +67,21 @@ describe('HdpAgentWrapper', () => {
     })).toThrow()
   })
 
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER])(
+    'rejects invalid expiresInMs %s during construction',
+    async (expiresInMs) => {
+      const { privateKey } = await generateKeyPair()
+
+      expect(() => new HdpAgentWrapper({
+        signingKey: privateKey,
+        sessionId: 'sess-autogen-invalid-ttl',
+        principal: { id: 'usr_test', id_type: 'opaque' },
+        scope: { intent: 'test' },
+        expiresInMs,
+      })).toThrow()
+    }
+  )
+
   it('logs root issuance failure and lets the speaker action continue', async () => {
     const { privateKey } = await generateKeyPair()
     const principal = { id: 'usr_test', id_type: 'opaque' }

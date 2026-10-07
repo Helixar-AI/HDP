@@ -323,13 +323,10 @@ class TestRecordAppendIsolation:
 
 
 class TestIssuanceValidation:
-    @pytest.mark.parametrize("expires_in_ms", [0, -1])
-    def test_nonpositive_ttl_does_not_raise_during_root_record_issuance(self, expires_in_ms):
-        mw, _, _ = _make_middleware(expires_in_ms=expires_in_ms)
-
-        mw._issue_root_token()
-
-        assert mw.export_token() is None
+    @pytest.mark.parametrize("expires_in_ms", [0, -1, True, 1.5, 2**53])
+    def test_invalid_ttl_fails_at_middleware_construction(self, expires_in_ms):
+        with pytest.raises(ValueError, match="expires_in_ms"):
+            _make_middleware(expires_in_ms=expires_in_ms)
 
     def test_root_issuance_rejects_invalid_max_hops(self):
         with pytest.raises(ValueError, match="max_hops must be a positive integer"):
