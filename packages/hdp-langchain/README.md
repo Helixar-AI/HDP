@@ -5,7 +5,7 @@
 Every tool call in a LangChain agent is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-langchain==0.2.0
+pip install hdp-langchain
 ```
 
 ---

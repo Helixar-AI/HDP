@@ -5,7 +5,7 @@
 Every task a CrewAI crew executes on behalf of a human is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-crewai==0.2.0
+pip install hdp-crewai
 ```
 
 ---

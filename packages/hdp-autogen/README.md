@@ -5,7 +5,7 @@
 Every speaker turn in an AutoGen GroupChat is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-autogen==0.2.0
+pip install hdp-autogen
 ```
 
 ---

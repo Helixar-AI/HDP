@@ -74,14 +74,14 @@ When a person delegates a task to an AI agent, and that agent delegates to anoth
 | [`@helixar_ai/hdp-autogen`](./packages/hdp-autogen-ts) | [npm](https://www.npmjs.com/package/@helixar_ai/hdp-autogen) | TypeScript | AutoGen               | AutoGen middleware — HdpAgentWrapper + hdpMiddleware for AutoGen flows     |
 | [`hdp-langchain`](./packages/hdp-langchain)            | [PyPI](https://pypi.org/project/hdp-langchain/)              | Python     | LangChain / LangGraph | LangChain middleware — attaches HDP to any chain, agent, or LangGraph node |
 | [`llama-index-callbacks-hdp`](./packages/llama-index-callbacks-hdp) | [PyPI](https://pypi.org/project/llama-index-callbacks-hdp/) | Python | LlamaIndex | LlamaIndex integration — callback handler, instrumentation dispatcher, node postprocessor |
-| [`hdp-llamaindex`](./packages/hdp-llamaindex)          | [PyPI](https://pypi.org/project/hdp-llamaindex/)             | Python     | LlamaIndex            | Metapackage; install with `pip install hdp-llamaindex==0.2.0` for HDP-first users |
+| [`hdp-llamaindex`](./packages/hdp-llamaindex)          | [PyPI](https://pypi.org/project/hdp-llamaindex/)             | Python     | LlamaIndex            | Metapackage. Install with `pip install hdp-llamaindex`. |
 
 ## Install
 
 **TypeScript / Node.js**
 
 ```bash
-npm install @helixar_ai/hdp@0.2.0
+npm install @helixar_ai/hdp
 ```
 
 **TypeScript / Physical AI**
@@ -93,7 +93,7 @@ npm install @helixar_ai/hdp-physical
 **Python / CrewAI**
 
 ```bash
-pip install hdp-crewai==0.2.0
+pip install hdp-crewai
 ```
 
 **Python / Physical AI**
@@ -105,34 +105,34 @@ pip install hdp-physical
 **Python / Grok (xAI API)**
 
 ```bash
-pip install hdp-grok==0.2.0 openai
+pip install hdp-grok openai
 ```
 
 **Python / AutoGen**
 
 ```bash
-pip install hdp-autogen==0.2.0
+pip install hdp-autogen
 ```
 
 **Python / Microsoft agent-framework**
 
 ```bash
-pip install hdp-agent-framework==0.2.0 agent-framework-foundry azure-identity
+pip install hdp-agent-framework agent-framework-foundry azure-identity
 # Set FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL for the deployment.
 ```
 
 **Python / LangChain**
 
 ```bash
-pip install hdp-langchain==0.2.0
+pip install hdp-langchain
 ```
 
 **Python / LlamaIndex**
 
 ```bash
-pip install llama-index-callbacks-hdp==0.2.0
+pip install llama-index-callbacks-hdp
 # or, from the HDP side:
-pip install hdp-llamaindex==0.2.0
+pip install hdp-llamaindex
 ```
 
 ---
@@ -141,40 +141,55 @@ pip install hdp-llamaindex==0.2.0
 
 HDP 0.2.0 follows draft -03. The token wire format remains HDP v0.1.
 
-- `VerificationOptions` now contains only `publicKey`. `VerificationOptions.currentSessionId` and `VerificationOptions.pohVerifier` map to `AuditOptions.sessionId` and `AuditOptions.pohVerifier` on `auditToken()`. `VerificationOptions.now`, `VerificationOptions.revokedTokenIds`, and `VerificationOptions.expectedPresenterAgentId` have no replacements; `AuditReport.recordingPeriod` reports timing, while revocation and presenter decisions remain outside HDP verification. `AuditOptions.linkedRecordRelationship` supplies linked-record findings.
-- `VerificationResult` is a discriminated union. Successful results have `valid: true`; failures have `valid: false`, `failedStep`, and `error`.
-- `HistoricalAuditOptions` is replaced by `AuditOptions`. `HistoricalAuditOptions.publicKey`, `HistoricalAuditOptions.currentSessionId`, and `HistoricalAuditOptions.pohVerifier` map to `AuditOptions.publicKey`, `AuditOptions.sessionId`, and `AuditOptions.pohVerifier`. `HistoricalAuditOptions.currentVerification` is replaced by those top-level fields. `HistoricalAuditOptions.evidence`, `HistoricalAuditOptions.verifyEvidence`, `HistoricalAuditOptions.now`, `HistoricalAuditOptions.revokedTokenIds`, and `HistoricalAuditOptions.expectedPresenterAgentId` have no replacements.
-- `HistoricalAuditReport` is replaced by `AuditReport`. `HistoricalAuditReport.recordIntegrity` maps to `AuditReport.integrity`. `HistoricalAuditReport.currentAcceptance` and `HistoricalAuditReport.historicalAcceptance` have no replacements because HDP does not evaluate action acceptance. `RecordIntegrityStatus` and `RecordIntegrityReport` map to `AuditReport.integrity.status` and `AuditReport.integrity`. `AcceptanceStatus`, `AcceptanceReport`, `HistoricalAcceptanceStatus`, `HistoricalAcceptanceEvidence`, `HistoricalAcceptanceReport`, and `RevocationState` have no replacements.
-- `AuditReport` exposes `integrity`, `recordingPeriod`, `session`, `linkedRecords`, and `poh`. It does not decide whether an action is accepted.
-- `verifyPrincipalChain()` replaces the `joint_authorization` relationship value with `joint_approval`. The `relationshipContext.type` value is `"joint_approval"`; the result reports `relationship: "joint_approval"` or `"unknown"`.
-- `validateToken()` and `verifyToken()` reject unknown top-level token members. Supported members are `hdp`, `header`, `principal`, `scope`, `chain`, and `signature`. Principal metadata belongs in `principal.metadata`, scope extensions in `scope.extensions`, and application data outside the token.
-- Setting `hdp_required: true` in `hdpMiddleware()` options from `@helixar_ai/hdp-mcp` or `@helixar_ai/hdp-autogen` raises during middleware construction. `HdpMiddlewareOptions.onMissing` and `HdpMiddlewareOptions.onInvalid` report missing or invalid records; neither gates calls.
-- `strict=True` raises during construction in `HdpAgentWrapper`, Python `HdpMiddleware` in `hdp-crewai`, `hdp-autogen`, `hdp-langchain`, and `hdp-agent-framework`, and LlamaIndex `HdpCallbackHandler` and `HdpNodePostprocessor`. `HdpAgentOptions.onScopeViolation` reports out-of-scope tools. Python middleware and LlamaIndex handlers record out-of-scope activity while calls continue. Python `HDPScopeViolationError` and TypeScript `HdpScopeViolationError` remain exported but are never thrown.
-- `HdpInstrumentationHandler.init(on_violation="raise")` raises `ValueError` during construction. The default is `on_violation="log"`.
-- Python `verify_chain()` results set `valid` from integrity alone and expose `recorded_after_period` for hop sequence numbers at or after `expires_at`; expiry does not invalidate a record. `hdp-grok` `HdpMiddleware.verify_token()` reports integrity in `valid` and expiry in `recorded_after_period`. Its `expired` field remains available for compatibility, and `HdpTokenExpiredError` remains importable but is never raised.
+| 0.1.x | 0.2.0 | Note |
+|---|---|---|
+| `VerificationOptions` | `VerificationOptions.publicKey` | `publicKey` is the only option. |
+| `VerificationOptions.currentSessionId` | `AuditOptions.sessionId` | Session check on `auditToken()`. |
+| `VerificationOptions.pohVerifier` | `AuditOptions.pohVerifier` | PoH check on `auditToken()`. |
+| `HistoricalAuditOptions` | `AuditOptions` | The audit fields are `publicKey`, `sessionId`, `linkedRecordRelationship`, and `pohVerifier`. |
+| `HistoricalAuditOptions.currentSessionId` | `AuditOptions.sessionId` | Session check on `auditToken()`. |
+| `HistoricalAuditOptions.pohVerifier` | `AuditOptions.pohVerifier` | PoH check on `auditToken()`. |
+| `HistoricalAuditOptions.currentVerification` | `AuditOptions.publicKey`, `AuditOptions.sessionId`, `AuditOptions.pohVerifier` | The verification fields are top-level audit options. |
+| `HistoricalAuditReport` | `AuditReport` | Fields include `integrity`, `recordingPeriod`, `session`, `linkedRecords`, and `poh`. |
+| `HistoricalAuditReport.recordIntegrity` | `AuditReport.integrity` | Record integrity result. |
+| `RecordIntegrityStatus` and `RecordIntegrityReport` | `AuditReport.integrity.status` and `AuditReport.integrity` | Integrity status and result. |
+| `joint_authorization` | `joint_approval` | `verifyPrincipalChain()` context and result. |
+| `VerificationResult` | `VerificationResult` | Discriminated union: `valid: true` on success; `valid: false`, `failedStep`, and `error` on failure. |
+| `HdpAgentOptions.strict: true` on `HdpAgentWrapper` | Construction error | `HdpAgentOptions.onScopeViolation` reports out-of-scope tools; exported `HdpScopeViolationError` is never thrown. |
+| `HdpMiddlewareOptions.hdp_required: true` on `hdpMiddleware()` | Construction error | `HdpMiddlewareOptions.onMissing` and `HdpMiddlewareOptions.onInvalid` report findings; calls continue. |
+| Python `strict=True` on `HdpMiddleware` in `hdp-crewai`, `hdp-autogen`, `hdp-langchain`, and `hdp-agent-framework`, plus `HdpCallbackHandler` and `HdpNodePostprocessor` in `llama-index-callbacks-hdp` | `ValueError` during construction | These adapters record findings and do not gate calls; `HDPScopeViolationError` remains importable and is never thrown. |
+| `HdpInstrumentationHandler.init(on_violation="raise")` | `ValueError` during construction | The default is `on_violation="log"`. |
+| Expiry in Python `verify_chain()` and `hdp-grok` `HdpMiddleware.verify_token()` | `recorded_after_period` | `valid` reports integrity only; `hdp-grok` retains the `expired` field and `HdpTokenExpiredError` for compatibility, but never raises the error. |
 
-In 0.1.x, `auditToken()` returned `HistoricalAuditReport` fields `currentAcceptance` and `historicalAcceptance`. In 0.2.0, use the `AuditReport` fields:
+The removed `VerificationOptions.now`, `VerificationOptions.revokedTokenIds`, `VerificationOptions.expectedPresenterAgentId`, `HistoricalAuditOptions.now`, `HistoricalAuditOptions.revokedTokenIds`, `HistoricalAuditOptions.expectedPresenterAgentId`, `HistoricalAuditOptions.evidence`, `HistoricalAuditOptions.verifyEvidence`, `HistoricalAuditReport.currentAcceptance`, `HistoricalAuditReport.historicalAcceptance`, `AcceptanceStatus`, `AcceptanceReport`, `HistoricalAcceptanceStatus`, `HistoricalAcceptanceEvidence`, `HistoricalAcceptanceReport`, and `RevocationState` have no replacement because draft Section 1.1 defines HDP as a record and leaves acceptance and revocation decisions to applications.
+
+Unknown top-level token members are rejected by `validateToken()` and `verifyToken()`. Supported top-level members are `hdp`, `header`, `principal`, `scope`, `chain`, and `signature`.
 
 ```typescript
-import { auditToken, generateKeyPair, issueToken } from "@helixar_ai/hdp";
+import { auditToken, generateKeyPair, issueToken, verifyToken } from "@helixar_ai/hdp";
 
-// 0.1.x: report.currentAcceptance and report.historicalAcceptance
 async function main() {
+  const sessionId = "upgrade-example";
   const { privateKey, publicKey } = await generateKeyPair();
   const token = await issueToken({
-    sessionId: "upgrade-example",
+    sessionId,
     principal: { id: "user-1", id_type: "opaque" },
     scope: {
-      intent: "Review a record",
+      intent: "review",
       data_classification: "internal",
       network_egress: false,
       persistence: false,
     },
     signingKey: privateKey,
-    keyId: "upgrade-example",
+    keyId: sessionId,
   });
-  const report = await auditToken(token, { publicKey });
-  console.log(report.integrity.status, report.recordingPeriod.status);
+  // 0.1.x:
+  // const verification = await verifyToken(token, { publicKey, currentSessionId: sessionId });
+  // const report = await auditToken(token, { publicKey, currentSessionId: sessionId });
+  // report.currentAcceptance; report.historicalAcceptance;
+  const verification = await verifyToken(token, { publicKey });
+  const report = await auditToken(token, { publicKey, sessionId });
+  console.log(verification.valid, report.integrity.status, report.session.status);
 }
 
 void main();
@@ -1012,11 +1027,11 @@ Test coverage includes: input validation, token forgery, chain tampering, prompt
 
 ## Releasing
 
-This monorepo uses **five independent tag prefixes** to release packages separately.
+Packages use independent tag prefixes.
 
-### TypeScript core packages → npm
+### Node.js packages → npm
 
-Publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, and `hdp-validate` CLI:
+The `v*` tag publishes `@helixar_ai/hdp`, `@helixar_ai/hdp-mcp`, `hdp-validate`, and `@helixar_ai/hdp-autogen`:
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0

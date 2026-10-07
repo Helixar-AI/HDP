@@ -3,7 +3,7 @@
 TypeScript middleware and a stateful wrapper for recording HDP provenance in AutoGen applications.
 
 ```sh
-npm install @helixar_ai/hdp-autogen@0.2.0
+npm install @helixar_ai/hdp-autogen
 ```
 
 ## Record agent activity

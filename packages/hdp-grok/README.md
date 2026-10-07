@@ -5,7 +5,7 @@
 Every tool call Grok makes on behalf of a human is recorded in a tamper-evident chain of Ed25519 signatures, verifiable offline with a single public key.
 
 ```
-pip install hdp-grok==0.2.0
+pip install hdp-grok
 ```
 
 ---

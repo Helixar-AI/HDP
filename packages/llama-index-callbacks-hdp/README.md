@@ -9,7 +9,7 @@ Every tool call, retrieval step, and LLM invocation is recorded in a tamper-evid
 ## Installation
 
 ```bash
-pip install llama-index-callbacks-hdp==0.2.0
+pip install llama-index-callbacks-hdp
 ```
 
 ## Usage

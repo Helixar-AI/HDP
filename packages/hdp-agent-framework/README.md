@@ -8,7 +8,7 @@ Every chat call and tool invocation is recorded in a tamper-evident chain of Ed2
 signatures, verifiable fully **offline** with a single public key.
 
 ```
-pip install hdp-agent-framework==0.2.0
+pip install hdp-agent-framework
 ```
 
 ---

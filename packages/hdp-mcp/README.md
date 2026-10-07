@@ -3,7 +3,7 @@
 MCP middleware for inspecting HDP provenance records.
 
 ```sh
-npm install @helixar_ai/hdp-mcp@0.2.0
+npm install @helixar_ai/hdp-mcp
 ```
 
 ## Usage

@@ -5,7 +5,7 @@ Command-line schema and structure checker for HDP v0.1 records.
 ## Usage
 
 ```sh
-npm install -g hdp-validate@0.2.0
+npm install -g hdp-validate
 hdp-validate token.json
 cat token.json | hdp-validate
 ```
