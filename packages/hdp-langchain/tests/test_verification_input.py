@@ -8,6 +8,8 @@ from copy import deepcopy
 import json
 from pathlib import Path
 
+import pytest
+
 from hdp_langchain.verify import verify_chain
 
 
@@ -49,16 +51,43 @@ def test_unsupported_string_algorithm_fails_at_step_two():
     _assert_failed_step(verify_chain(token, _PUBLIC_KEY), 2)
 
 
-def test_custom_id_type_cases_accept_plain_value_and_reject_trailing_newline():
-    assert _ID_TYPE_CASES == {"accepted": "x-custom", "rejected": "x-custom\n"}
+def test_custom_id_type_without_line_terminators_passes_section_three():
+    assert _ID_TYPE_CASES == {
+        "accepted": "x-custom",
+        "rejected": [
+            "x-custom\n",
+            "x-\n",
+            "x-a\nb",
+            "x-a\rb",
+            "x-a\u2028b",
+            "x-a\u2029b",
+            "x-",
+        ],
+    }
 
     accepted = deepcopy(_TOKEN)
     accepted["principal"]["id_type"] = _ID_TYPE_CASES["accepted"]
     _assert_failed_step(verify_chain(accepted, _PUBLIC_KEY), 2)
 
-    rejected = deepcopy(_TOKEN)
-    rejected["principal"]["id_type"] = _ID_TYPE_CASES["rejected"]
-    _assert_failed_step(verify_chain(rejected, _PUBLIC_KEY), 0)
+
+@pytest.mark.parametrize(
+    "id_type",
+    _ID_TYPE_CASES["rejected"],
+    ids=[
+        "trailing-lf",
+        "empty-suffix-lf",
+        "embedded-lf",
+        "embedded-cr",
+        "embedded-line-separator",
+        "embedded-paragraph-separator",
+        "prefix-only",
+    ],
+)
+def test_custom_id_type_line_terminators_fail_at_step_zero(id_type):
+    token = deepcopy(_TOKEN)
+    token["principal"]["id_type"] = id_type
+
+    _assert_failed_step(verify_chain(token, _PUBLIC_KEY), 0)
 
 
 def test_unmodified_shared_section_three_vector_verifies():

@@ -65,6 +65,24 @@ describe('issueSupersedingToken', () => {
     expect(overridden.scope.persistence).toBe(true)
   })
 
+  it('rejects a schema-invalid principal before signing a superseding record', async () => {
+    const { privateKey } = await generateKeyPair()
+    const original = await issueToken({
+      sessionId: 'sess-invalid-custom',
+      principal: { id: 'u', id_type: 'opaque' },
+      scope: { intent: 'initial task', data_classification: 'public', network_egress: false, persistence: false },
+      signingKey: privateKey,
+      keyId: 'k1',
+    })
+
+    await expect(issueSupersedingToken({
+      original,
+      principal: { id: 'u', id_type: 'x-custom\n' },
+      signingKey: privateKey,
+      keyId: 'k1',
+    })).rejects.toMatchObject({ code: 'SCHEMA_INVALID' })
+  })
+
   it('keeps the legacy issueReAuthToken export as an alias', () => {
     expect(issueReAuthToken).toBe(issueSupersedingToken)
   })

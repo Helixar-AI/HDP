@@ -232,7 +232,8 @@ def _validate_token_input(token: object) -> str | None:
         return "principal.id must be a string"
     id_type = principal.get("id_type")
     if not isinstance(id_type, str) or (
-        id_type not in _PRINCIPAL_ID_TYPES and re.fullmatch(r"x-.+", id_type) is None
+        id_type not in _PRINCIPAL_ID_TYPES
+        and re.fullmatch(r"x-[^\r\n\u2028\u2029]+", id_type) is None
     ):
         return "principal.id_type must be a defined value or match 'x-...'"
     for field_name in ("poh_credential", "display_name"):
