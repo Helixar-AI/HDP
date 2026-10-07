@@ -11,7 +11,11 @@ import type { HdpToken } from '../../src/types/token.js'
 
 const section3Vector = JSON.parse(
   readFileSync(new URL('../vectors/section3-validation.json', import.meta.url), 'utf8'),
-) as { public_key_hex: string; token: Record<string, any> }
+) as {
+  public_key_hex: string
+  id_type_cases: { accepted: string; rejected: string }
+  token: Record<string, any>
+}
 const section3Token = section3Vector.token
 const section3PublicKey = Buffer.from(section3Vector.public_key_hex, 'hex')
 
@@ -100,6 +104,32 @@ describe('draft -03 integrity verification', () => {
 
   it('verifies the unmodified shared Section 3 input vector', async () => {
     expect(await verifyToken(section3Token, { publicKey: section3PublicKey })).toEqual({ valid: true })
+  })
+
+  it('rejects a trailing newline in custom id_type at step 0', async () => {
+    expect(section3Vector.id_type_cases).toEqual({ accepted: 'x-custom', rejected: 'x-custom\n' })
+
+    const acceptedIdType = {
+      ...section3Token,
+      principal: { ...section3Token.principal, id_type: section3Vector.id_type_cases.accepted },
+    }
+    const rejectedIdType = {
+      ...section3Token,
+      principal: { ...section3Token.principal, id_type: section3Vector.id_type_cases.rejected },
+    }
+    const acceptedResult = await verifyToken(acceptedIdType, { publicKey: section3PublicKey })
+    const rejectedResult = await verifyToken(rejectedIdType, { publicKey: section3PublicKey })
+
+    expect(acceptedResult).toMatchObject({
+      valid: false,
+      failedStep: 2,
+      error: { code: 'SIGNATURE_INVALID' },
+    })
+    expect(rejectedResult).toMatchObject({
+      valid: false,
+      failedStep: 0,
+      error: { code: 'SCHEMA_INVALID' },
+    })
   })
 
   it('reports input validation failures at step 0', async () => {

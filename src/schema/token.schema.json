@@ -32,7 +32,7 @@
           "type": "string",
           "anyOf": [
             { "enum": ["email", "uuid", "did", "poh", "opaque"] },
-            { "pattern": "^x-.+" }
+            { "pattern": "^x-.+$" }
           ]
         },
         "poh_credential": { "type": "string" },

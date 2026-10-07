@@ -20,6 +20,7 @@ _VECTOR_PATH = (
 _VECTOR = json.loads(_VECTOR_PATH.read_text(encoding="utf-8"))
 _TOKEN = _VECTOR["token"]
 _PUBLIC_KEY = bytes.fromhex(_VECTOR["public_key_hex"])
+_ID_TYPE_CASES = _VECTOR["id_type_cases"]
 
 
 def _assert_failed_step(result, step: int) -> None:
@@ -46,6 +47,18 @@ def test_unsupported_string_algorithm_fails_at_step_two():
     token["signature"]["alg"] = "EdDSA"
 
     _assert_failed_step(verify_chain(token, _PUBLIC_KEY), 2)
+
+
+def test_custom_id_type_cases_accept_plain_value_and_reject_trailing_newline():
+    assert _ID_TYPE_CASES == {"accepted": "x-custom", "rejected": "x-custom\n"}
+
+    accepted = deepcopy(_TOKEN)
+    accepted["principal"]["id_type"] = _ID_TYPE_CASES["accepted"]
+    _assert_failed_step(verify_chain(accepted, _PUBLIC_KEY), 2)
+
+    rejected = deepcopy(_TOKEN)
+    rejected["principal"]["id_type"] = _ID_TYPE_CASES["rejected"]
+    _assert_failed_step(verify_chain(rejected, _PUBLIC_KEY), 0)
 
 
 def test_unmodified_shared_section_three_vector_verifies():
