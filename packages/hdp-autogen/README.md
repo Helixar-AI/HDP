@@ -171,7 +171,7 @@ Pipeline: `test-hdp-autogen` → `vet-hdp-autogen` ([ReleaseGuard](https://githu
 ## Spec
 
 Human Delegation Provenance (HDP) is an IETF draft:
-[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)
+[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03))
 
 ## License
 

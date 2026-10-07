@@ -92,7 +92,7 @@ git tag v0.1.2 && git push origin v0.1.2
 
 ## Specification
 
-HDP is specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/).
+HDP is specified in the [IETF draft](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03)).
 
 ## License
 

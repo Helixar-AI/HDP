@@ -51,7 +51,7 @@ When a person delegates a task to an AI agent, and that agent delegates to anoth
 
 **Boundary:** HDP is not an authorization protocol, capability, access token, or credential. A valid token proves that its signed record is authentic and intact; it does not grant access, prove that an action occurred, or show that a named delegate consented. Services must make authorization decisions using their own access-control system.
 
-**Standardization:** HDP is specified in the IETF individual Internet-Draft [draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) (Informational). Draft -03 defines HDP as record-only: verification establishes record integrity, while each service makes action decisions through its own access control system. The v0.1 token structure and signature payloads are unchanged.
+**Standardization:** HDP is specified in the IETF individual Internet-Draft [draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) (Informational). This implementation follows [draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03). Draft -03 defines HDP as record-only: verification establishes record integrity, while each service makes action decisions through its own access control system. The v0.1 token structure and signature payloads are unchanged.
 
 → [Protocol boundaries and audit semantics](./docs/audit-semantics.md)
 

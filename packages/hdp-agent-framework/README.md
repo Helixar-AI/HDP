@@ -216,7 +216,7 @@ Pipeline: `test-hdp-agent-framework` → `vet-hdp-agent-framework` ([ReleaseGuar
 ## Spec & citation
 
 HDP is an IETF draft standard:
-[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/)
+[draft-helixar-hdp-agentic-delegation](https://datatracker.ietf.org/doc/draft-helixar-hdp-agentic-delegation/) ([draft-helixar-hdp-agentic-delegation-03](https://datatracker.ietf.org/doc/html/draft-helixar-hdp-agentic-delegation-03))
 
 Protocol specification and documentation:
 [helixar.ai/about/labs/hdp/](https://helixar.ai/about/labs/hdp/)
