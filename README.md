@@ -140,30 +140,32 @@ pip install hdp-llamaindex
 ## Upgrading from 0.1.x to 0.2.0
 
 HDP 0.2.0 follows draft -03. The token wire format remains HDP v0.1.
+In 0.2.0, `VerificationOptions` contains only `publicKey`.
 
 | 0.1.x | 0.2.0 | Note |
 |---|---|---|
-| `VerificationOptions` | `VerificationOptions.publicKey` | `publicKey` is the only option. |
-| `VerificationOptions.currentSessionId` | `AuditOptions.sessionId` | Session check on `auditToken()`. |
-| `VerificationOptions.pohVerifier` | `AuditOptions.pohVerifier` | PoH check on `auditToken()`. |
-| `HistoricalAuditOptions` | `AuditOptions` | The audit fields are `publicKey`, `sessionId`, `linkedRecordRelationship`, and `pohVerifier`. |
-| `HistoricalAuditOptions.currentSessionId` | `AuditOptions.sessionId` | Session check on `auditToken()`. |
-| `HistoricalAuditOptions.pohVerifier` | `AuditOptions.pohVerifier` | PoH check on `auditToken()`. |
-| `HistoricalAuditOptions.currentVerification` | `AuditOptions.publicKey`, `AuditOptions.sessionId`, `AuditOptions.pohVerifier` | The verification fields are top-level audit options. |
-| `HistoricalAuditReport` | `AuditReport` | Fields include `integrity`, `recordingPeriod`, `session`, `linkedRecords`, and `poh`. |
-| `HistoricalAuditReport.recordIntegrity` | `AuditReport.integrity` | Record integrity result. |
-| `RecordIntegrityStatus` and `RecordIntegrityReport` | `AuditReport.integrity.status` and `AuditReport.integrity` | Integrity status and result. |
-| `joint_authorization` | `joint_approval` | `verifyPrincipalChain()` context and result. |
-| `VerificationResult` | `VerificationResult` | Discriminated union: `valid: true` on success; `valid: false`, `failedStep`, and `error` on failure. |
-| `HdpAgentOptions.strict: true` on `HdpAgentWrapper` | Construction error | `HdpAgentOptions.onScopeViolation` reports out-of-scope tools; exported `HdpScopeViolationError` is never thrown. |
-| `HdpMiddlewareOptions.hdp_required: true` on `hdpMiddleware()` | Construction error | `HdpMiddlewareOptions.onMissing` and `HdpMiddlewareOptions.onInvalid` report findings; calls continue. |
-| Python `strict=True` on `HdpMiddleware` in `hdp-crewai`, `hdp-autogen`, `hdp-langchain`, and `hdp-agent-framework`, plus `HdpCallbackHandler` and `HdpNodePostprocessor` in `llama-index-callbacks-hdp` | `ValueError` during construction | These adapters record findings and do not gate calls; `HDPScopeViolationError` remains importable and is never thrown. |
-| `HdpInstrumentationHandler.init(on_violation="raise")` | `ValueError` during construction | The default is `on_violation="log"`. |
-| Expiry in Python `verify_chain()` and `hdp-grok` `HdpMiddleware.verify_token()` | `recorded_after_period` | `valid` reports integrity only; `hdp-grok` retains the `expired` field and `HdpTokenExpiredError` for compatibility, but never raises the error. |
+| `VerificationOptions.currentSessionId` | `AuditOptions.sessionId` in `auditToken()` | `verifyToken()` checks integrity only. `auditToken()` reports session match status. |
+| `VerificationOptions.pohVerifier` | `AuditOptions.pohVerifier` in `auditToken()` | The callback receives `(credential, token)` and may return `boolean` or `Promise<boolean>`. |
+| `VerificationResult { valid: boolean; error?: HdpError }` | `VerificationResult` union: `{ valid: true }` or `{ valid: false; failedStep: IntegrityStep; error: HdpError }` | `verifyToken()` identifies the first failed integrity step. |
+| `verifyPrincipalChain(chain, opts: Omit<VerificationOptions, 'publicKey'>)` | `verifyPrincipalChain(chain, opts?: PrincipalChainVerificationOptions)` | The result adds `relationship: 'joint_approval' | 'unknown'`; authenticated context is required for `joint_approval`. |
+| `issueReAuthToken(opts: ReAuthOptions)` | `issueSupersedingToken(opts: SupersedingTokenOptions)` | `issueReAuthToken()` remains as a deprecated alias. |
+| `storeToken(store, token)` | `storeToken(store, token, reference?)` | Without `reference`, both the token ID and content reference are stored. |
+| `resolveToken(store, tokenId)` | `resolveToken(store, reference)` | Accepts a token ID or a `sha256:` content reference and checks the resolved token. |
+| `HDP_HEADER = 'X-HDP-Token'`; `HDP_REF_HEADER = 'X-HDP-Token-Ref'` | `HDP_HEADER = 'HDP-Token'`; `HDP_REF_HEADER = 'HDP-Token-Ref'` | `HDP_LEGACY_HEADER` and `HDP_LEGACY_REF_HEADER` retain the X-prefixed inbound names. |
+| `verifyToken()` returns `HdpTokenExpiredError` or `HdpSessionMismatchError` in `VerificationResult.error` | `auditToken()` reports `AuditReport.recordingPeriod` and `AuditReport.session` | The error classes remain exported for compatibility. Expiry and session mismatch do not invalidate record integrity. |
+| `hdp-validate <token.json>` exits 1 for an expired token | `hdp-validate <token.json>` exits 0 for a structurally valid expired token | The command reports the elapsed authorization period and late hops in notes. |
+| `HdpMiddlewareOptions.hdp_required: true` on `hdpMiddleware()` | Construction error; `HdpMiddlewareOptions.onMissing` and `HdpMiddlewareOptions.onInvalid` report findings | The middleware runs in observe mode and continues to the handler. |
+| `HdpAgentOptions.strict: true` on `HdpAgentWrapper` | Construction error; `HdpAgentOptions.onScopeViolation` reports findings | `HdpScopeViolationError` remains exported for compatibility and is not thrown. |
+| Python `HdpMiddleware(strict=True)` in `hdp-crewai`, `hdp-autogen`, `hdp-langchain`, and `hdp-agent-framework`; `HdpCallbackHandler(strict=True)` and `HdpNodePostprocessor(strict=True)` in `llama-index-callbacks-hdp` | `ValueError` during construction when `strict=True` | Omit `strict`; the adapters record findings and continue. `HDPScopeViolationError` remains importable and is not raised. |
+| `HdpInstrumentationHandler.init(on_violation="raise")` | `ValueError` during initialization | `on_violation="log"` records findings and continues. |
+| Python `verify_chain()` returns `valid: false` and an expiry violation for expired tokens | `VerificationResult.recorded_after_period` | `VerificationResult.valid` reports integrity only; `recorded_after_period` lists late hop sequence numbers. |
+| `hdp-grok` `HdpMiddleware.extend_chain()` raises `HdpTokenExpiredError`; `HdpMiddleware.verify_token()` returns `expired` | `HdpMiddleware.extend_chain()` records the hop; `HdpMiddleware.verify_token()` reports `recorded_after_period` | The `expired` result field remains available. `HdpTokenExpiredError` remains importable and is not raised. |
 
-The removed `VerificationOptions.now`, `VerificationOptions.revokedTokenIds`, `VerificationOptions.expectedPresenterAgentId`, `HistoricalAuditOptions.now`, `HistoricalAuditOptions.revokedTokenIds`, `HistoricalAuditOptions.expectedPresenterAgentId`, `HistoricalAuditOptions.evidence`, `HistoricalAuditOptions.verifyEvidence`, `HistoricalAuditReport.currentAcceptance`, `HistoricalAuditReport.historicalAcceptance`, `AcceptanceStatus`, `AcceptanceReport`, `HistoricalAcceptanceStatus`, `HistoricalAcceptanceEvidence`, `HistoricalAcceptanceReport`, and `RevocationState` have no replacement because draft Section 1.1 defines HDP as a record and leaves acceptance and revocation decisions to applications.
+`VerificationOptions.now` was removed with no replacement because draft Section 1.1 defines HDP as a record, and HDP does not decide acceptance.
 
 Unknown top-level token members are rejected by `validateToken()` and `verifyToken()`. Supported top-level members are `hdp`, `header`, `principal`, `scope`, `chain`, and `signature`.
+
+Code written against unreleased main-branch versions between 0.1.3 and 0.2.0 may also use interim names such as `HistoricalAuditOptions`, `HistoricalAuditReport`, `currentAcceptance`, `historicalAcceptance`, `revokedTokenIds`, `expectedPresenterAgentId`, and `joint_authorization`; `HistoricalAuditOptions` and `HistoricalAuditReport` map to `AuditOptions` and `AuditReport`, `joint_authorization` maps to `joint_approval`, and acceptance and revocation fields are removed.
 
 ```typescript
 import { auditToken, generateKeyPair, issueToken, verifyToken } from "@helixar_ai/hdp";
@@ -174,19 +176,13 @@ async function main() {
   const token = await issueToken({
     sessionId,
     principal: { id: "user-1", id_type: "opaque" },
-    scope: {
-      intent: "review",
-      data_classification: "internal",
-      network_egress: false,
-      persistence: false,
-    },
+    scope: { intent: "review", data_classification: "internal", network_egress: false, persistence: false },
     signingKey: privateKey,
     keyId: sessionId,
   });
-  // 0.1.x:
+  // 0.1.3:
   // const verification = await verifyToken(token, { publicKey, currentSessionId: sessionId });
-  // const report = await auditToken(token, { publicKey, currentSessionId: sessionId });
-  // report.currentAcceptance; report.historicalAcceptance;
+  // 0.2.0:
   const verification = await verifyToken(token, { publicKey });
   const report = await auditToken(token, { publicKey, sessionId });
   console.log(verification.valid, report.integrity.status, report.session.status);
