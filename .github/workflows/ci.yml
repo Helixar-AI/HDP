@@ -40,6 +40,46 @@ jobs:
       - name: Build
         run: npm run build
 
+  smoke-npm-consumers:
+    name: Smoke packed npm consumers (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build core
+        run: npm run build
+
+      - name: Build hdp-mcp
+        run: cd packages/hdp-mcp && npm run build
+
+      - name: Build hdp-cli
+        run: cd packages/hdp-cli && npm run build
+
+      - name: Build hdp-autogen-ts
+        run: cd packages/hdp-autogen-ts && npm run build
+
+      - name: Copy LICENSE into dist directories
+        run: |
+          cp LICENSE dist/
+          cp LICENSE packages/hdp-mcp/dist/
+          cp LICENSE packages/hdp-cli/dist/
+          cp LICENSE packages/hdp-autogen-ts/dist/
+
+      - name: Smoke test packed npm consumers
+        run: bash .github/scripts/smoke-npm-release.sh all
+
   test-hdp-mcp:
     name: Test hdp-mcp (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
