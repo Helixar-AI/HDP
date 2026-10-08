@@ -115,14 +115,8 @@ for (const packageName of packages) {
     await import(packageName)
     console.log(`ESM import: ${packageName}: PASS`)
   } catch (error) {
-    const knownAjvResolution = error.code === 'ERR_MODULE_NOT_FOUND'
-      && /\/ajv\/dist\/2020(?:\.js)?(?:$|[?#])/.test(error.url ?? error.message)
-    if (knownAjvResolution) {
-      console.log(`ESM import: ${packageName}: KNOWN_FAILURE (${error.code}: ${error.url ?? error.message})`)
-    } else {
-      console.error(`ESM import: ${packageName}: FAIL`, error)
-      failures += 1
-    }
+    console.error(`ESM import: ${packageName}: FAIL`, error)
+    failures += 1
   }
 }
 
