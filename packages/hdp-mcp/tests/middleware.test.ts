@@ -256,10 +256,9 @@ describe('hdpMiddleware', () => {
     const handler = vi.fn().mockResolvedValue({ result: 'ok' })
     const wrapped = hdpMiddleware(handler, { verify: { publicKey }, onInvalid, onValid })
 
-    await new Promise<void>(resolve => setTimeout(
-      resolve,
-      Math.max(1, token.header.expires_at - Date.now() + 1),
-    ))
+    while (Date.now() <= token.header.expires_at) {
+      await new Promise<void>(resolve => setTimeout(resolve, 1))
+    }
     expect(token.header.expires_at).toBeLessThan(Date.now())
 
     const response = await wrapped({ headers: { 'HDP-Token': encodeHeader(token) }, tool: 'my_tool' })
