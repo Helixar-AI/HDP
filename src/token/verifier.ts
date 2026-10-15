@@ -168,7 +168,7 @@ async function verifyHopSignatures(token: HdpToken, publicKey: Uint8Array): Prom
 }
 
 /**
- * Verify record integrity in the six ordered draft -03 steps. The result uses
+ * Verify record integrity in the five ordered draft -03 steps (Section 5). The result uses
  * only the token and issuer public key, so it is independent of time and session.
  * For object input, duplicate-name detection rests with the caller's parser;
  * passing raw JSON text applies Section 3's duplicate-name check here.

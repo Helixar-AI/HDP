@@ -19,7 +19,9 @@ export function validateChain(chain: HopRecord[], maxHops: number | undefined): 
     // already appeared in the chain.  In particular, a hop must not point
     // to itself or to a later hop.
     if (!Number.isSafeInteger(hop.parent_hop) || hop.parent_hop < 0 || hop.parent_hop >= hop.seq) {
-      throw new HdpChainIntegrityError(`invalid parent_hop ${hop.parent_hop} for seq ${hop.seq}`)
+      throw new HdpChainIntegrityError(
+        `invalid parent_hop ${hop.parent_hop} for seq ${hop.seq}; 0 denotes the root authorization`,
+      )
     }
 
     if (!Number.isSafeInteger(hop.timestamp) || hop.timestamp < 0) {
