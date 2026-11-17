@@ -1,17 +1,23 @@
-import Ajv from 'ajv/dist/2020.js'
-import addFormats from 'ajv-formats'
-import schema from './token.schema.json'
+// The token schema validator is compiled at build time by
+// scripts/build-validator.mjs (Ajv standalone code), not at load time. Compiling
+// at load time needs runtime code generation, which Cloudflare Workers and
+// strict Content-Security-Policy environments refuse, so the package would fail
+// to load there.
+import { validate, type ValidationError } from './validator.generated.js'
 import { HdpSchemaError } from '../types/errors.js'
 
-const ajv = new Ajv({ strict: false })
-addFormats(ajv)
-const validate = ajv.compile(schema)
+// Reproduces Ajv's default errorsText() output ("data<path> <message>", joined
+// with ", "), so error messages are unchanged from the runtime-compiled
+// validator.
+function formatErrors(errors: ValidationError[] | null | undefined): string {
+  if (!errors || errors.length === 0) return 'No errors'
+  return errors.map((e) => `data${e.instancePath} ${e.message}`).join(', ')
+}
 
 export function validateToken(token: unknown): void {
   const valid = validate(token)
   if (!valid) {
-    const msg = ajv.errorsText(validate.errors)
-    throw new HdpSchemaError(msg)
+    throw new HdpSchemaError(formatErrors(validate.errors))
   }
 
   const candidate = token as { header: { issued_at: number; expires_at: number } }

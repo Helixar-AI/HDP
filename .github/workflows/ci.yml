@@ -34,11 +34,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run tests
-        run: npm test
-
+      # Build before testing: tests/unit/dist-no-codegen.test.ts loads the
+      # built package under --disallow-code-generation-from-strings and is
+      # skipped when dist/ is absent.
       - name: Build
         run: npm run build
+
+      - name: Run tests
+        run: npm test
 
   smoke-npm-consumers:
     name: Smoke packed npm consumers (Node ${{ matrix.node-version }})
