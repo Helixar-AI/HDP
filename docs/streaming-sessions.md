@@ -32,7 +32,7 @@ const fullRecord = await extendChain(issued, {
   agent_id: "analysis-agent",
   agent_type: "sub-agent",
   action_summary: "Summarize the quarterly sales report",
-  parent_hop: 0,
+  parent_hop: 0, // 0 means the root (human) authorization (draft-03 Section 3.4, Section 4.3 Rule 3)
 }, privateKey);
 
 // The full record is not extended again. The application continues its task.

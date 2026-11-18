@@ -236,7 +236,7 @@ token = await extendChain(
     agent_id: "orchestrator-v2",
     agent_type: "orchestrator",
     action_summary: "Decompose analysis task and delegate to sub-agents.",
-    parent_hop: 0,
+    parent_hop: 0, // 0 means the root (human) authorization (draft-03 Section 3.4, Section 4.3 Rule 3)
   },
   privateKey,
 );
@@ -829,7 +829,7 @@ const extendedToken = await extendChain(token, {
   agent_id: "report-agent",
   agent_type: "sub-agent",
   action_summary: "Format the report",
-  parent_hop: 0,
+  parent_hop: 0, // 0 means the root (human) authorization (draft-03 Section 3.4, Section 4.3 Rule 3)
 }, privateKey);
 const store = new InMemoryTokenStore();
 const tokenIdRef = await storeToken(store, token); // immutable first snapshot
